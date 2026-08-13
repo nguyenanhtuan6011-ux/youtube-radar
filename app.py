@@ -3,6 +3,7 @@ import yt_dlp
 from collections import Counter
 import pandas as pd
 import re
+import random
 
 # Bộ lọc: Trả về False nếu phát hiện có ký tự tiếng Trung, Nhật, Hàn
 def la_tu_khoa_hop_le(tag):
@@ -10,18 +11,26 @@ def la_tu_khoa_hop_le(tag):
         return False
     return True
 
-# Hàm quét và bóc tách dữ liệu ép theo quốc gia
+# Hàm quét và bóc tách dữ liệu ép theo quốc gia, tích hợp mặt nạ trình duyệt
 def quet_youtube(tu_khoa, so_luong=10, ma_quoc_gia="US"):
     danh_sach_tags = []
     query = f"ytsearch{so_luong}:{tu_khoa}"
     
-    # Cấu hình giả lập vị trí và trình duyệt
+    # Tạo danh sách các trình duyệt giả để đánh lừa YouTube
+    danh_sach_trinh_duyet = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    ]
+    
+    # Cấu hình giả lập vị trí và trình duyệt ngẫu nhiên
     ydl_opts = {
         'skip_download': True,
         'quiet': True,
         'extract_flat': False,
         'http_headers': {
-            'Accept-Language': 'en-US,en;q=0.9' # Ép YouTube ưu tiên tiếng Anh
+            'User-Agent': random.choice(danh_sach_trinh_duyet),
+            'Accept-Language': 'en-US,en;q=0.9' 
         }
     }
     
@@ -48,7 +57,7 @@ st.set_page_config(page_title="Radar Quét Ngách", page_icon="🎯", layout="wi
 st.title("🎯 Radar Quét Hàng Loạt Từ Khóa Ngách")
 st.markdown("Nhập một chủ đề, hệ thống sẽ tìm 10 video top đầu và tổng hợp từ khóa đối thủ đang dùng.")
 
-# Bố cục giao diện: 2 cột (Nhập từ khóa và Chọn thị trường)
+# Bố cục giao diện: 2 cột
 col_input, col_market = st.columns([2, 1])
 
 with col_input:
@@ -69,15 +78,31 @@ elif lua_chon_thi_truong == "Toàn cầu":
 
 if st.button("🚀 Bắt đầu quét hàng loạt"):
     if tu_khoa:
-        with st.spinner(f'Đang kết nối tới máy chủ {lua_chon_thi_truong} để quét từ khóa cho "{tu_khoa}"...'):
+        with st.spinner(f'Đang giả lập trình duyệt và kết nối tới {lua_chon_thi_truong} để quét từ khóa cho "{tu_khoa}"...'):
             tong_hop_tags = quet_youtube(tu_khoa, 10, ma_quoc_gia)
             
         if not tong_hop_tags:
-            st.error("Không tìm thấy từ khóa nào phù hợp hoặc hệ thống tạm thời bị chặn. Hãy thử lại!")
+            st.error("Hệ thống đám mây vẫn đang bị YouTube chặn tạm thời. Vui lòng đợi 5-10 phút rồi thử lại, hoặc dùng một từ khóa dài hơn.")
         else:
             st.success(f"🎉 Quét hoàn tất! Đã lấy dữ liệu chuẩn từ thị trường {lua_chon_thi_truong}.")
             dem_tags = Counter(tong_hop_tags)
             top_20_tags = dem_tags.most_common(20) 
+            
+            # Chuẩn bị dữ liệu để xuất file Excel
+            df_export = pd.DataFrame(top_20_tags, columns=['Từ khóa', 'Tần suất'])
+            
+            # Chuyển đổi dữ liệu sang định dạng CSV tương thích với Excel (utf-8-sig)
+            csv = df_export.to_csv(index=False).encode('utf-8-sig')
+            
+            # Nút tải xuống
+            st.download_button(
+                label="📥 Tải xuống danh sách từ khóa (Mở bằng Excel)",
+                data=csv,
+                file_name=f'tu_khoa_ngach_{tu_khoa.replace(" ", "_")}.csv',
+                mime='text/csv',
+            )
+            
+            st.markdown("---")
             
             col1, col2 = st.columns([1, 2])
             
@@ -88,8 +113,7 @@ if st.button("🚀 Bắt đầu quét hàng loạt"):
                     
             with col2:
                 st.subheader("📊 Biểu đồ xu hướng")
-                df = pd.DataFrame(top_20_tags, columns=['Từ khóa', 'Tần suất'])
-                df = df.set_index('Từ khóa')
-                st.bar_chart(df)
+                df_chart = df_export.set_index('Từ khóa')
+                st.bar_chart(df_chart)
     else:
         st.warning("Vui lòng nhập từ khóa trước khi quét!")
