@@ -1,3 +1,2 @@
-yt-dlp
-youtube-search-python
 pandas
+duckduckgo-search
