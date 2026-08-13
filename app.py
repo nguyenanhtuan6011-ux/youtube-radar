@@ -1,63 +1,47 @@
 import streamlit as st
-import yt_dlp
+from youtubesearchpython import VideosSearch
 from collections import Counter
 import pandas as pd
 import re
-import random
 
-# Bộ lọc: Trả về False nếu phát hiện có ký tự tiếng Trung, Nhật, Hàn
-def la_tu_khoa_hop_le(tag):
-    if re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\u20000-\u2a6df]', tag):
+# Danh sách từ khóa cơ bản cần bỏ qua (Stop words tiếng Anh)
+STOP_WORDS = {'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it', 'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'how', 'what', 'why', 'do', 'can', 'my', 'we', 'about', 'an', 'if', 'will', 'up', 'out', 'just', 'so', 'me', 'they', 'like', 'get', 'more', 'have'}
+
+def la_tu_khoa_hop_le(word):
+    # Lọc ký tự tiếng Trung, Nhật, Hàn
+    if re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\u20000-\u2a6df]', word):
         return False
-    return True
+    # Chỉ lấy chữ cái, độ dài > 2, không nằm trong danh sách từ bỏ qua
+    if len(word) > 2 and word not in STOP_WORDS:
+        return True
+    return False
 
-# Hàm quét và bóc tách dữ liệu ép theo quốc gia, tích hợp mặt nạ trình duyệt
-def quet_youtube(tu_khoa, so_luong=10, ma_quoc_gia="US"):
-    danh_sach_tags = []
-    query = f"ytsearch{so_luong}:{tu_khoa}"
-    
-    # Tạo danh sách các trình duyệt giả để đánh lừa YouTube
-    danh_sach_trinh_duyet = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    ]
-    
-    # Cấu hình giả lập vị trí và trình duyệt ngẫu nhiên
-    ydl_opts = {
-        'skip_download': True,
-        'quiet': True,
-        'extract_flat': False,
-        'http_headers': {
-            'User-Agent': random.choice(danh_sach_trinh_duyet),
-            'Accept-Language': 'en-US,en;q=0.9' 
-        }
-    }
-    
-    # Kích hoạt chuyển vùng nếu có chọn quốc gia
-    if ma_quoc_gia:
-        ydl_opts['geo_bypass_country'] = ma_quoc_gia
-    
+def quet_tu_khoa_hien_dai(tu_khoa, so_luong=15, ma_quoc_gia="US"):
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if 'entries' in info:
-                for video in info['entries']:
-                    tags = video.get('tags', [])
-                    if tags:
-                        # Lọc tiếng Trung
-                        tags_hop_le = [t for t in tags if la_tu_khoa_hop_le(t)]
-                        danh_sach_tags.extend(tags_hop_le)
-            return danh_sach_tags
+        videosSearch = VideosSearch(tu_khoa, limit=so_luong, region=ma_quoc_gia)
+        ket_qua = videosSearch.result()['result']
+        
+        tat_ca_van_ban = ""
+        for video in ket_qua:
+            # Thu thập tiêu đề của các video top đầu
+            title = video.get('title', '')
+            tat_ca_van_ban += f" {title}"
+            
+        # Tách từ và làm sạch dữ liệu
+        words = re.findall(r'\b[a-zA-Z]+\b', tat_ca_van_ban.lower())
+        
+        # Lọc ra các từ khóa cốt lõi
+        keywords = [w for w in words if la_tu_khoa_hop_le(w)]
+        return keywords
     except Exception as e:
         return []
 
 # Giao diện chính của ứng dụng
 st.set_page_config(page_title="Radar Quét Ngách", page_icon="🎯", layout="wide")
 st.title("🎯 Radar Quét Hàng Loạt Từ Khóa Ngách")
-st.markdown("Nhập một chủ đề, hệ thống sẽ tìm 10 video top đầu và tổng hợp từ khóa đối thủ đang dùng.")
+st.markdown("Hệ thống phân tích Tiêu đề của Top 15 video dẫn đầu để tìm ra Keyword cốt lõi (Đã kích hoạt chế độ chống chặn).")
 
-# Bố cục giao diện: 2 cột
+# Bố cục giao diện
 col_input, col_market = st.columns([2, 1])
 
 with col_input:
@@ -69,7 +53,6 @@ with col_market:
         ("Hoa Kỳ (US)", "Châu Âu (Anh Quốc - UK)", "Toàn cầu")
     )
 
-# Dịch lựa chọn thành mã quốc gia cho hệ thống
 ma_quoc_gia = "US"
 if lua_chon_thi_truong == "Châu Âu (Anh Quốc - UK)":
     ma_quoc_gia = "GB"
@@ -78,23 +61,20 @@ elif lua_chon_thi_truong == "Toàn cầu":
 
 if st.button("🚀 Bắt đầu quét hàng loạt"):
     if tu_khoa:
-        with st.spinner(f'Đang giả lập trình duyệt và kết nối tới {lua_chon_thi_truong} để quét từ khóa cho "{tu_khoa}"...'):
-            tong_hop_tags = quet_youtube(tu_khoa, 10, ma_quoc_gia)
+        with st.spinner(f'Đang quét Top 15 video thị trường {lua_chon_thi_truong} (Thuật toán mới cực nhẹ)...'):
+            tong_hop_tags = quet_tu_khoa_hien_dai(tu_khoa, 15, ma_quoc_gia)
             
         if not tong_hop_tags:
-            st.error("Hệ thống đám mây vẫn đang bị YouTube chặn tạm thời. Vui lòng đợi 5-10 phút rồi thử lại, hoặc dùng một từ khóa dài hơn.")
+            st.error("Không tìm thấy dữ liệu. Hãy kiểm tra lại kết nối hoặc thử một từ khóa khác!")
         else:
             st.success(f"🎉 Quét hoàn tất! Đã lấy dữ liệu chuẩn từ thị trường {lua_chon_thi_truong}.")
             dem_tags = Counter(tong_hop_tags)
             top_20_tags = dem_tags.most_common(20) 
             
-            # Chuẩn bị dữ liệu để xuất file Excel
+            # Xuất file
             df_export = pd.DataFrame(top_20_tags, columns=['Từ khóa', 'Tần suất'])
-            
-            # Chuyển đổi dữ liệu sang định dạng CSV tương thích với Excel (utf-8-sig)
             csv = df_export.to_csv(index=False).encode('utf-8-sig')
             
-            # Nút tải xuống
             st.download_button(
                 label="📥 Tải xuống danh sách từ khóa (Mở bằng Excel)",
                 data=csv,
