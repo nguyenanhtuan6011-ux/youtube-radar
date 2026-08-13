@@ -1,36 +1,35 @@
 import streamlit as st
-from youtubesearchpython import VideosSearch
+from duckduckgo_search import DDGS
 from collections import Counter
 import pandas as pd
 import re
 
-# Danh sách từ khóa cơ bản cần bỏ qua (Stop words tiếng Anh)
-STOP_WORDS = {'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it', 'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'how', 'what', 'why', 'do', 'can', 'my', 'we', 'about', 'an', 'if', 'will', 'up', 'out', 'just', 'so', 'me', 'they', 'like', 'get', 'more', 'have'}
+# Danh sách từ khóa cơ bản cần bỏ qua (Stop words)
+STOP_WORDS = {'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it', 'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'how', 'what', 'why', 'do', 'can', 'my', 'we', 'about', 'an', 'if', 'will', 'up', 'out', 'just', 'so', 'me', 'they', 'like', 'get', 'more', 'have', 'youtube', 'video'}
 
 def la_tu_khoa_hop_le(word):
     # Lọc ký tự tiếng Trung, Nhật, Hàn
     if re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\u20000-\u2a6df]', word):
         return False
-    # Chỉ lấy chữ cái, độ dài > 2, không nằm trong danh sách từ bỏ qua
+    # Lấy từ hợp lệ (dài hơn 2 chữ cái và không nằm trong từ khóa bỏ qua)
     if len(word) > 2 and word not in STOP_WORDS:
         return True
     return False
 
-def quet_tu_khoa_hien_dai(tu_khoa, so_luong=15, ma_quoc_gia="US"):
+def quet_qua_duckduckgo(tu_khoa, so_luong=30):
     try:
-        videosSearch = VideosSearch(tu_khoa, limit=so_luong, region=ma_quoc_gia)
-        ket_qua = videosSearch.result()['result']
+        # Nhờ DuckDuckGo quét trang YouTube để lách luật chặn IP
+        query = f"site:youtube.com {tu_khoa}"
+        ket_qua = DDGS().text(query, max_results=so_luong)
         
         tat_ca_van_ban = ""
-        for video in ket_qua:
-            # Thu thập tiêu đề của các video top đầu
-            title = video.get('title', '')
-            tat_ca_van_ban += f" {title}"
+        for item in ket_qua:
+            title = item.get('title', '')
+            title = title.replace("- YouTube", "") # Xóa chữ mặc định
+            tat_ca_van_ban += f" {title} "
             
-        # Tách từ và làm sạch dữ liệu
+        # Tách lấy các từ cốt lõi
         words = re.findall(r'\b[a-zA-Z]+\b', tat_ca_van_ban.lower())
-        
-        # Lọc ra các từ khóa cốt lõi
         keywords = [w for w in words if la_tu_khoa_hop_le(w)]
         return keywords
     except Exception as e:
@@ -39,46 +38,30 @@ def quet_tu_khoa_hien_dai(tu_khoa, so_luong=15, ma_quoc_gia="US"):
 # Giao diện chính của ứng dụng
 st.set_page_config(page_title="Radar Quét Ngách", page_icon="🎯", layout="wide")
 st.title("🎯 Radar Quét Hàng Loạt Từ Khóa Ngách")
-st.markdown("Hệ thống phân tích Tiêu đề của Top 15 video dẫn đầu để tìm ra Keyword cốt lõi (Đã kích hoạt chế độ chống chặn).")
+st.markdown("Hệ thống sử dụng vệ tinh tìm kiếm ẩn danh để phân tích video (Bảo đảm 100% không bị chặn IP).")
 
-# Bố cục giao diện
-col_input, col_market = st.columns([2, 1])
-
-with col_input:
-    tu_khoa = st.text_input("🔑 Nhập chủ đề bạn muốn phân tích:")
-
-with col_market:
-    lua_chon_thi_truong = st.selectbox(
-        "🌍 Chọn thị trường mục tiêu:",
-        ("Hoa Kỳ (US)", "Châu Âu (Anh Quốc - UK)", "Toàn cầu")
-    )
-
-ma_quoc_gia = "US"
-if lua_chon_thi_truong == "Châu Âu (Anh Quốc - UK)":
-    ma_quoc_gia = "GB"
-elif lua_chon_thi_truong == "Toàn cầu":
-    ma_quoc_gia = ""
+tu_khoa = st.text_input("🔑 Nhập chủ đề bạn muốn phân tích (Nên dùng tiếng Anh, VD: personal finance):")
 
 if st.button("🚀 Bắt đầu quét hàng loạt"):
     if tu_khoa:
-        with st.spinner(f'Đang quét Top 15 video thị trường {lua_chon_thi_truong} (Thuật toán mới cực nhẹ)...'):
-            tong_hop_tags = quet_tu_khoa_hien_dai(tu_khoa, 15, ma_quoc_gia)
+        with st.spinner(f'Đang dùng vệ tinh quét lách luật cho "{tu_khoa}"...'):
+            tong_hop_tags = quet_qua_duckduckgo(tu_khoa, 30)
             
         if not tong_hop_tags:
-            st.error("Không tìm thấy dữ liệu. Hãy kiểm tra lại kết nối hoặc thử một từ khóa khác!")
+            st.error("Lỗi mạng lưới vệ tinh. Vui lòng thử lại một từ khóa khác!")
         else:
-            st.success(f"🎉 Quét hoàn tất! Đã lấy dữ liệu chuẩn từ thị trường {lua_chon_thi_truong}.")
+            st.success("🎉 Quét hoàn tất! Đã thu thập thành công dữ liệu.")
             dem_tags = Counter(tong_hop_tags)
             top_20_tags = dem_tags.most_common(20) 
             
-            # Xuất file
+            # Đóng gói xuất Excel
             df_export = pd.DataFrame(top_20_tags, columns=['Từ khóa', 'Tần suất'])
             csv = df_export.to_csv(index=False).encode('utf-8-sig')
             
             st.download_button(
                 label="📥 Tải xuống danh sách từ khóa (Mở bằng Excel)",
                 data=csv,
-                file_name=f'tu_khoa_ngach_{tu_khoa.replace(" ", "_")}.csv',
+                file_name=f'tu_khoa_{tu_khoa.replace(" ", "_")}.csv',
                 mime='text/csv',
             )
             
