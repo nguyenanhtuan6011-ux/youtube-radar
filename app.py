@@ -15,7 +15,7 @@ import google.generativeai as genai
 # Set up giao diện Streamlit
 st.set_page_config(page_title="Radar SEO & Content Pro", page_icon="🚀", layout="wide")
 st.title("🚀 Radar SEO & Trợ Lý Viết Bài AI (Bản Ultimate)")
-st.markdown("Hỗ trợ trích xuất từ khóa đa nguồn, phân loại ý định tìm kiếm, phân tích bình luận và tự động viết dàn ý bài chuẩn SEO bằng AI.")
+st.markdown("Hỗ trợ trích xuất từ khóa, phân loại ý định tìm kiếm, gom nhóm và tự động viết dàn ý bài chuẩn SEO bằng AI.")
 
 if 'history' not in st.session_state:
     st.session_state.history = []
@@ -47,7 +47,7 @@ ngram_choice = st.sidebar.radio("Độ dài từ khóa:", ("Từ đơn", "Cụm 
 ngram_map = {"Từ đơn": 1, "Cụm 2 từ": 2, "Cụm 3 từ": 3}
 selected_ngram = ngram_map[ngram_choice]
 
-# --- CÁC HÀM XỬ LÝ CỐT LÕI (CÓ NÂNG CẤP) ---
+# --- CÁC HÀM XỬ LÝ CỐT LÕI ---
 
 @st.cache_data(show_spinner=False)
 def lam_sach_text(text):
@@ -63,7 +63,6 @@ def trich_xuat_tu_khoa(danh_sach_tu, loai_ngram=1, top_n=50):
     else: tokens = [' '.join(tu_hop_le[i:i+3]) for i in range(len(tu_hop_le)-2)]
     return Counter(tokens).most_common(top_n)
 
-# TÍNH NĂNG 3: PHÂN LOẠI Ý ĐỊNH TÌM KIẾM (Search Intent)
 def phan_loai_y_dinh(kw):
     kw_lower = kw.lower()
     if any(w in kw_lower for w in ['mua', 'giá', 'bán', 'rẻ', 'bao nhiêu', 'khuyến mãi', 'shop']): return "🛒 Giao dịch"
@@ -71,13 +70,11 @@ def phan_loai_y_dinh(kw):
     if any(w in kw_lower for w in ['facebook', 'youtube', 'shopee', 'tiki', 'lazada', 'login']): return "🧭 Điều hướng"
     return "💡 Khám phá"
 
-# TÍNH NĂNG 2: GOM NHÓM TỪ KHÓA (Clustering)
 def gom_nhom(kw):
     words = kw.split()
     if len(words) > 1: return words[0].capitalize()
     return "Từ Đơn"
 
-# TÍNH NĂNG 4.1: CẢI THIỆN CẢM XÚC TIẾNG VIỆT
 def phan_tich_cam_xuc_vn(text):
     tich_cuc = ['tuyệt', 'hay', 'tốt', 'giỏi', 'đẹp', 'xuất sắc', 'thích', 'ok', 'ngon', 'đỉnh', 'cảm ơn']
     tieu_cuc = ['tệ', 'chán', 'dở', 'xấu', 'lỗi', 'kém', 'lừa đảo', 'scam', 'thất vọng']
@@ -87,7 +84,6 @@ def phan_tich_cam_xuc_vn(text):
     if score > 0: return "Tích cực 😊"
     elif score < 0: return "Tiêu cực 😠"
     
-    # Fallback cho Tiếng Anh
     blob_score = TextBlob(text).sentiment.polarity
     if blob_score > 0.1: return "Tích cực 😊"
     elif blob_score < -0.1: return "Tiêu cực 😠"
@@ -96,7 +92,10 @@ def phan_tich_cam_xuc_vn(text):
 def tao_file_excel(df):
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='TuKhoa')
+        # Sheet 1: Tất cả từ khóa
+        df.to_excel(writer, index=False, sheet_name='Tat_Ca_Tu_Khoa')
+        # Sheet 2: Chỉ lấy Top 10
+        df.head(10).to_excel(writer, index=False, sheet_name='Top_10_Tu_Khoa')
     buffer.seek(0)
     return buffer
 
@@ -104,7 +103,6 @@ def luu_lich_su(hanh_dong):
     if hanh_dong not in st.session_state.history:
         st.session_state.history.append(hanh_dong)
 
-# TÍNH NĂNG 1: TÍCH HỢP AI TẠO NỘI DUNG (Generative AI)
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần nhập Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
@@ -135,10 +133,13 @@ def hien_thi_ket_qua(ket_qua_tu_khoa, nguyen_ban_text, ten_file_xuat="tu_khoa"):
     col_info1.info(f"**Cảm xúc văn bản:** {phan_tich_cam_xuc_vn(nguyen_ban_text)}")
     col_info2.info(f"**Top 1 Keyword:** {ket_qua_tu_khoa[0][0].capitalize()}")
 
-    # Nâng cấp DataFrame với Ý định và Gom nhóm
+    # Tạo DataFrame và thêm các cột phân tích
     df = pd.DataFrame(ket_qua_tu_khoa, columns=['Từ khóa / Cụm từ', 'Tần suất'])
     df['Ý định tìm kiếm (Intent)'] = df['Từ khóa / Cụm từ'].apply(phan_loai_y_dinh)
     df['Nhóm (Cluster)'] = df['Từ khóa / Cụm từ'].apply(gom_nhom)
+    
+    # THÊM CỘT PHÂN LOẠI TOP 10 
+    df['Phân loại Top'] = ['🏆 Top 10 Thịnh hành' if i < 10 else 'Thông thường' for i in range(len(df))]
     
     col_dl1, col_dl2 = st.columns(2)
     with col_dl1:
@@ -157,7 +158,8 @@ def hien_thi_ket_qua(ket_qua_tu_khoa, nguyen_ban_text, ten_file_xuat="tu_khoa"):
     
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.subheader("🔥 Bảng Tần Suất & Intent")
+        st.subheader("🔥 Bảng Dữ Liệu Từ Khóa")
+        # Đổi màu hiển thị trên Streamlit cho đẹp mắt
         st.dataframe(df, use_container_width=True)
     with c2:
         st.subheader("☁️ Word Cloud")
@@ -219,7 +221,6 @@ with tab1:
     else:
         link_yt = st.text_input("🔗 Nhập link Video/Kênh YouTube:")
         
-        # TÍNH NĂNG 4.2: CÀO COMMENT YOUTUBE
         quet_comment = st.checkbox("💬 Quét luôn cả bình luận của người xem (Chỉ dùng cho Link Video)")
         
         if st.button("🚀 Phân Tích YouTube"):
@@ -233,7 +234,6 @@ with tab1:
                         
                         full_content = f"{title} {meta_desc} " + ' '.join([t.text for t in soup.find_all(['h1', 'h2', 'h3', 'span'])])
                         
-                        # Xử lý Cào Comment qua API
                         if quet_comment:
                             if not yt_api_key:
                                 st.warning("Bạn chưa nhập YouTube API Key ở thanh bên. Hệ thống chỉ lấy tiêu đề & mô tả.")
