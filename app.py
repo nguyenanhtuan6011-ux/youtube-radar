@@ -13,15 +13,15 @@ from textblob import TextBlob
 
 # Set up giao diện Streamlit
 st.set_page_config(page_title="Radar SEO & Content Pro", page_icon="🚀", layout="wide")
-st.title("🚀 Radar SEO & Trợ Lý Viết Bài AI (Bản Ultimate)")
-st.markdown("Hỗ trợ trích xuất từ khóa, phân loại ý định tìm kiếm, gom nhóm và tự động viết dàn ý bài chuẩn SEO bằng AI.")
+st.title("🚀 Radar SEO & Content Pro (Bản All-in-One)")
+st.markdown("Hệ sinh thái phân tích từ khóa, đối thủ và tự động hóa sản xuất nội dung bằng Trí Tuệ Nhân Tạo.")
 
 # ================= KHỞI TẠO BỘ NHỚ TẠM (SESSION STATE) =================
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_kw' not in st.session_state: st.session_state.current_kw = None
 if 'current_text' not in st.session_state: st.session_state.current_text = ""
 if 'current_file' not in st.session_state: st.session_state.current_file = ""
-if 'ai_outline' not in st.session_state: st.session_state.ai_outline = ""
+if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
 
 # --- CẤU HÌNH API KEY (SIDEBAR) ---
 st.sidebar.header("🔑 Cấu Hình API (Tùy chọn)")
@@ -67,9 +67,9 @@ def trich_xuat_tu_khoa(danh_sach_tu, loai_ngram=1, top_n=50):
 
 def phan_loai_y_dinh(kw):
     kw_lower = kw.lower()
-    if any(w in kw_lower for w in ['mua', 'giá', 'bán', 'rẻ', 'bao nhiêu', 'khuyến mãi', 'shop']): return "🛒 Giao dịch"
+    if any(w in kw_lower for w in ['mua', 'giá', 'bán', 'rẻ', 'bao nhiêu', 'khuyến mãi', 'shop', 'lazada', 'shopee']): return "🛒 Giao dịch"
     if any(w in kw_lower for w in ['cách', 'hướng dẫn', 'là gì', 'tại sao', 'khi nào', 'review', 'đánh giá', 'không']): return "📖 Thông tin"
-    if any(w in kw_lower for w in ['facebook', 'youtube', 'shopee', 'tiki', 'lazada', 'login']): return "🧭 Điều hướng"
+    if any(w in kw_lower for w in ['facebook', 'youtube', 'tiki', 'login', 'web']): return "🧭 Điều hướng"
     return "💡 Khám phá"
 
 def gom_nhom(kw):
@@ -105,10 +105,10 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_kw = res_kw
     st.session_state.current_text = full_text
     st.session_state.current_file = ten_file
-    st.session_state.ai_outline = ""
+    st.session_state.ai_result = ""
 
-# --- HÀM TẠO DÀN Ý AI (CỖ XE TĂNG: QUÉT VÀ THỬ TẤT CẢ CÁC MÔ HÌNH) ---
-def tao_dan_y_ai(tu_khoa_list):
+# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
+def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
@@ -123,37 +123,44 @@ def tao_dan_y_ai(tu_khoa_list):
             return
             
         models_data = res_list.json().get('models', [])
-        # Lọc các model sinh chữ và ưu tiên họ nhà 'gemini'
         valid_models = [m['name'] for m in models_data if 'generateContent' in m.get('supportedGenerationMethods', []) and 'gemini' in m['name']]
         
         if not valid_models:
-            st.error("❌ Không tìm thấy mô hình viết bài nào khả dụng.")
+            st.error("❌ Không tìm thấy mô hình khả dụng.")
             return
 
-        prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
-        Hãy giúp tôi: 
-        1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn.
-        2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
+        # Soạn Prompt dựa theo lựa chọn của người dùng
+        if che_do == "📝 Lập Dàn Ý SEO (Outline)":
+            prompt = f"Bạn là chuyên gia SEO. Dựa vào Top từ khóa: {tu_khoa_list}. Hãy đề xuất 3 Tiêu đề hấp dẫn và lập Dàn ý (H2, H3) chi tiết chuẩn SEO."
+        elif che_do == "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)":
+            prompt = f"Bạn là một Copywriter chuyên nghiệp. Dựa vào bộ từ khóa: {tu_khoa_list}. Hãy viết một bài Blog chuẩn SEO hoàn chỉnh, dài khoảng 1000 từ. Bố cục rõ ràng, có mở bài, thân bài (chia các Heading H2, H3) và kết bài. Lồng ghép từ khóa một cách tự nhiên nhất."
+        elif che_do == "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)":
+            prompt = f"Bạn là một chuyên gia sáng tạo nội dung Video ngắn. Từ các từ khóa xu hướng này: {tu_khoa_list}. Hãy viết một kịch bản Video dọc (dưới 60 giây). Bao gồm: 1. Hook (Câu móc nối 3 giây đầu gây sốc/tò mò), 2. Body (Nội dung chính diễn giải chi tiết), 3. CTA (Kêu gọi hành động). Cung cấp cả gợi ý hình ảnh/chữ chạy trên màn hình (Text on screen)."
+        elif che_do == "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)":
+            prompt = f"Bạn là chuyên gia chốt sale trên các sàn thương mại điện tử. Dựa vào danh sách từ khóa nhu cầu này: {tu_khoa_list}. Hãy viết: 1. 3 phương án Tiêu đề Sản phẩm giật tít, chuẩn SEO. 2. Một đoạn Mô tả sản phẩm (Product Description) đánh mạnh vào nỗi đau khách hàng, nêu bật lợi ích và lồng ghép từ khóa để tối ưu thứ hạng tìm kiếm."
+        elif che_do == "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)":
+            if "youtube" not in st.session_state.current_file.lower() and "yt" not in st.session_state.current_file.lower():
+                st.warning("Tính năng này hoạt động tốt nhất khi bạn nhập Link YouTube của đối thủ ở Tab 1. AI sẽ phân tích text hiện tại, nhưng có thể không chính xác nếu đây không phải dữ liệu từ YouTube.")
+            prompt = f"Dưới đây là dữ liệu (Tiêu đề, mô tả, và possibly comments) trích xuất từ Video YouTube của đối thủ: \n\n{text_goc[:5000]}\n\nBạn là một YouTuber chuyên nghiệp. Hãy phân tích nội dung trên và viết ra một Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ và HẤP DẪN HƠN cho kênh của tôi. Cấu trúc kịch bản bao gồm: Tiêu đề thu hút, Hook, Intro, Body (Các luận điểm chính được diễn giải chi tiết hơn đối thủ), và Outro/CTA."
+
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
         success = False
-        with st.spinner("🤖 Trợ lý AI đang thử các mô hình khả dụng để tìm đường vào Google..."):
+        with st.spinner(f"🤖 Trợ lý AI đang xử lý yêu cầu: {che_do}..."):
             for model_name in valid_models:
                 url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=15)
+                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=25)
                 
-                # Nếu thành công (mã 200) thì lưu kết quả và dừng vòng lặp ngay
                 if resp_gen.status_code == 200:
                     data = resp_gen.json()
-                    st.session_state.ai_outline = data['candidates'][0]['content']['parts'][0]['text']
+                    st.session_state.ai_result = data['candidates'][0]['content']['parts'][0]['text']
                     success = True
                     break
                     
         if success:
-            st.rerun() # Tải lại trang để hiện kết quả ngay lập tức
+            st.rerun()
         else:
-            # Nếu thử tất cả đều thất bại
-            st.error("❌ Mọi mô hình của Google đều từ chối yêu cầu. Google có thể đang chặn API Key của bạn.")
+            st.error("❌ Máy chủ Google đang quá tải hoặc từ chối xử lý, vui lòng thử lại.")
             
     except Exception as e:
         st.error(f"Lỗi kết nối: {e}")
@@ -276,26 +283,46 @@ if st.session_state.current_kw:
         
     st.markdown("---")
     
-    # 🤖 KHU VỰC TRỢ LÝ AI
+    # 🤖 KHU VỰC TRỢ LÝ AI MỚI (MENU ĐA NĂNG)
+    st.subheader("🤖 Trợ Lý Trí Tuệ Nhân Tạo (Đa Năng)")
+    che_do_ai = st.selectbox("Chọn hành động bạn muốn AI thực hiện:", [
+        "📝 Lập Dàn Ý SEO (Outline)",
+        "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)",
+        "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)",
+        "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)",
+        "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)"
+    ])
+    
     top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
-    if st.button("✨ Dùng AI viết Dàn Ý Bài Viết dựa trên Top Từ Khóa"):
-        tao_dan_y_ai(top_10_words)
+    
+    if st.button(f"✨ Kích Hoạt Trợ Lý AI: {che_do_ai.split(' ')[1]}"):
+        xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text)
         
-    if st.session_state.ai_outline:
-        st.success("✅ Trợ lý AI đã hoàn thành!")
-        st.markdown(st.session_state.ai_outline)
+    if st.session_state.ai_result:
+        st.success("✅ Trợ lý AI đã hoàn thành xuất sắc nhiệm vụ!")
+        st.markdown(st.session_state.ai_result)
         
     st.markdown("---")
     
-    c1, c2 = st.columns([1.2, 1])
+    # 📊 KHU VỰC BÁO CÁO PHÂN TÍCH (Bổ sung biểu đồ Tròn)
+    st.subheader("📊 Báo Cáo Phân Tích Dữ Liệu")
+    
+    c1, c2, c3 = st.columns([1.5, 1, 1])
     with c1:
-        st.subheader("🔥 Bảng Dữ Liệu Từ Khóa")
+        st.markdown("**Bảng Dữ Liệu Từ Khóa**")
         st.dataframe(df, use_container_width=True)
     with c2:
-        st.subheader("☁️ Word Cloud")
+        st.markdown("**Biểu Đồ Ý Định Tìm Kiếm (Intent)**")
+        intent_counts = df['Ý định tìm kiếm (Intent)'].value_counts()
+        fig_pie, ax_pie = plt.subplots(figsize=(4, 4))
+        ax_pie.pie(intent_counts, labels=intent_counts.index, autopct='%1.1f%%', startangle=90, colors=['#ff9999','#66b3ff','#99ff99','#ffcc99'])
+        ax_pie.axis('equal') 
+        st.pyplot(fig_pie)
+    with c3:
+        st.markdown("**Đám Mây Từ Khóa (Word Cloud)**")
         words_dict = dict(st.session_state.current_kw)
-        wc = WordCloud(width=600, height=400, background_color='white', colormap='viridis').generate_from_frequencies(words_dict)
-        fig, ax = plt.subplots()
-        ax.imshow(wc, interpolation='bilinear')
-        ax.axis("off")
-        st.pyplot(fig)
+        wc = WordCloud(width=400, height=400, background_color='white', colormap='viridis').generate_from_frequencies(words_dict)
+        fig_wc, ax_wc = plt.subplots(figsize=(4, 4))
+        ax_wc.imshow(wc, interpolation='bilinear')
+        ax_wc.axis("off")
+        st.pyplot(fig_wc)
