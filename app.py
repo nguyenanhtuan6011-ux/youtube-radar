@@ -107,57 +107,56 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_outline = ""
 
-# --- HÀM TẠO DÀN Ý AI (TỰ ĐỘNG DÒ MODEL QUA HTTP) ---
+# --- HÀM TẠO DÀN Ý AI (CỖ XE TĂNG: QUÉT VÀ THỬ TẤT CẢ CÁC MÔ HÌNH) ---
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
         
-    # Bước 1: Lấy danh sách các Model mà API Key này được phép truy cập
-    url_list = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_api_key}"
+    url_list = "https://generativelanguage.googleapis.com/v1beta/models"
+    headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
+    
     try:
-        res_list = requests.get(url_list, timeout=10)
+        res_list = requests.get(url_list, headers=headers, timeout=10)
         if res_list.status_code != 200:
-            st.error(f"❌ Khóa API không hợp lệ hoặc bị chặn: {res_list.text}")
+            st.error(f"❌ Khóa API không hợp lệ: {res_list.text}")
             return
             
         models_data = res_list.json().get('models', [])
-        # Lọc ra các model có khả năng viết chữ (generateContent)
-        valid_models = [m['name'] for m in models_data if 'generateContent' in m.get('supportedGenerationMethods', [])]
+        # Lọc các model sinh chữ và ưu tiên họ nhà 'gemini'
+        valid_models = [m['name'] for m in models_data if 'generateContent' in m.get('supportedGenerationMethods', []) and 'gemini' in m['name']]
         
         if not valid_models:
-            st.error("❌ Tài khoản Google của bạn không có mô hình nào hỗ trợ viết bài.")
+            st.error("❌ Không tìm thấy mô hình viết bài nào khả dụng.")
             return
 
-        # Tự động chọn mô hình ngon nhất (ưu tiên gemini)
-        chosen_model = valid_models[0]
-        for m in valid_models:
-            if 'gemini' in m and 'vision' not in m:
-                chosen_model = m
-                break
-                
-        # Hiển thị cho người dùng biết hệ thống đang dùng model nào
-        st.info(f"🔍 Hệ thống đã tự động kết nối thành công với mô hình: **{chosen_model}**")
-        
-        # Bước 2: Gọi AI viết bài
-        prompt = f"""Bạn là một chuyên gia SEO. Dựa vào Top từ khóa sau: {tu_khoa_list}. 
-        Hãy: 1. Đề xuất 3 Tiêu đề hấp dẫn. 2. Lập Dàn ý (H2, H3) chuẩn SEO."""
-        
-        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{chosen_model}:generateContent?key={gemini_api_key}"
-        headers = {'Content-Type': 'application/json'}
+        prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
+        Hãy giúp tôi: 
+        1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn.
+        2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ..."):
-            resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=30)
-            if resp_gen.status_code == 200:
-                data = resp_gen.json()
-                st.session_state.ai_outline = data['candidates'][0]['content']['parts'][0]['text']
-                st.rerun() # Tải lại trang để hiện kết quả
-            else:
-                st.error(f"Lỗi khi viết bài ({resp_gen.status_code}): {resp_gen.text}")
+        success = False
+        with st.spinner("🤖 Trợ lý AI đang thử các mô hình khả dụng để tìm đường vào Google..."):
+            for model_name in valid_models:
+                url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
+                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=15)
                 
+                # Nếu thành công (mã 200) thì lưu kết quả và dừng vòng lặp ngay
+                if resp_gen.status_code == 200:
+                    data = resp_gen.json()
+                    st.session_state.ai_outline = data['candidates'][0]['content']['parts'][0]['text']
+                    success = True
+                    break
+                    
+        if success:
+            st.rerun() # Tải lại trang để hiện kết quả ngay lập tức
+        else:
+            # Nếu thử tất cả đều thất bại
+            st.error("❌ Mọi mô hình của Google đều từ chối yêu cầu. Google có thể đang chặn API Key của bạn.")
+            
     except Exception as e:
-        st.error(f"Lỗi đường truyền Internet: {e}")
+        st.error(f"Lỗi kết nối: {e}")
 
 # ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
 tab1, tab2, tab3 = st.tabs(["📺 YouTube & Gợi Ý", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
