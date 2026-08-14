@@ -107,7 +107,7 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_outline = ""
 
-# --- HÀM TẠO DÀN Ý BẰNG AI (KẾT NỐI API TRỰC TIẾP - CHỐNG LỖI 100%) ---
+# --- HÀM TẠO DÀN Ý BẰNG AI (KẾT NỐI API TRỰC TIẾP QUA GEMINI-PRO) ---
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
@@ -118,8 +118,8 @@ def tao_dan_y_ai(tu_khoa_list):
     1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
     2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
     
-    # Gọi thẳng vào Server của Google bằng giao thức HTTP (Bỏ qua thư viện lỗi)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+    # Sử dụng mô hình gemini-pro chuẩn nhất của Google
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={gemini_api_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
@@ -135,7 +135,7 @@ def tao_dan_y_ai(tu_khoa_list):
                 error_msg = response.json().get('error', {}).get('message', 'Không rõ lỗi')
                 st.error(f"Lỗi từ máy chủ Google ({response.status_code}): {error_msg}")
         except Exception as e:
-            st.error(f"Lỗi đường truyền Internet: {e}")
+            st.error(f"Lỗi kết nối: {e}")
 
 # ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
 tab1, tab2, tab3 = st.tabs(["📺 YouTube & Gợi Ý", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
