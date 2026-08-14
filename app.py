@@ -10,7 +10,6 @@ import docx
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from textblob import TextBlob
-import google.generativeai as genai
 
 # Set up giao diện Streamlit
 st.set_page_config(page_title="Radar SEO & Content Pro", page_icon="🚀", layout="wide")
@@ -108,28 +107,35 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_outline = ""
 
-# --- HÀM TẠO DÀN Ý BẰNG AI (KHÓA CỨNG GEMINI-PRO) ---
+# --- HÀM TẠO DÀN Ý BẰNG AI (KẾT NỐI API TRỰC TIẾP - CHỐNG LỖI 100%) ---
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
-    try:
-        genai.configure(api_key=gemini_api_key)
         
-        # Chỉ định thẳng mô hình "gemini-pro" - Chuẩn mực và tương thích 100%
-        model = genai.GenerativeModel('gemini-pro')
-        
-        prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
-        Hãy giúp tôi: 
-        1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
-        2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
-        
-        with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ để viết dàn ý..."):
-            response = model.generate_content(prompt)
-            st.session_state.ai_outline = response.text
-            
-    except Exception as e:
-        st.error(f"Lỗi khi gọi AI: {e}")
+    prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
+    Hãy giúp tôi: 
+    1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
+    2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
+    
+    # Gọi thẳng vào Server của Google bằng giao thức HTTP (Bỏ qua thư viện lỗi)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ để viết dàn ý..."):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                st.session_state.ai_outline = data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                error_msg = response.json().get('error', {}).get('message', 'Không rõ lỗi')
+                st.error(f"Lỗi từ máy chủ Google ({response.status_code}): {error_msg}")
+        except Exception as e:
+            st.error(f"Lỗi đường truyền Internet: {e}")
 
 # ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
 tab1, tab2, tab3 = st.tabs(["📺 YouTube & Gợi Ý", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
