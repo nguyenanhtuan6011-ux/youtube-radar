@@ -1,2 +1,6 @@
+streamlit
+requests
 pandas
-duckduckgo-search
+openpyxl
+beautifulsoup4
+python-docx
