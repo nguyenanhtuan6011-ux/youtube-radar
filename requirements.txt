@@ -4,3 +4,6 @@ pandas
 openpyxl
 beautifulsoup4
 python-docx
+wordcloud
+matplotlib
+textblob
