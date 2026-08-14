@@ -11,3 +11,5 @@ wordcloud
 matplotlib
 textblob
 google-generativeai
+google-generativeai>=0.7.0
+
