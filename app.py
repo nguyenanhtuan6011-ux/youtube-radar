@@ -108,22 +108,36 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_outline = ""
 
+# --- HÀM TẠO DÀN Ý BẰNG AI (ĐÃ NÂNG CẤP CHỐNG LỖI 404) ---
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
     try:
         genai.configure(api_key=gemini_api_key)
-        # Đã đổi từ 'gemini-1.5-flash' sang 'gemini-pro' để khắc phục triệt để lỗi 404
-        model = genai.GenerativeModel('gemini-pro')
+        
+        # Tự động dò tìm mô hình AI khả dụng
+        available_model = None
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_model = m.name
+                if '1.5-flash' in m.name or '1.5-pro' in m.name:
+                    break
+                    
+        if not available_model:
+            st.error("❌ Không tìm thấy mô hình AI nào khả dụng cho API Key này.")
+            return
+            
+        model = genai.GenerativeModel(available_model)
         prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
         Hãy giúp tôi: 
         1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
         2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
         
-        with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ để viết dàn ý..."):
+        with st.spinner(f"🤖 Đang vắt óc suy nghĩ bằng mô hình ({available_model})..."):
             response = model.generate_content(prompt)
             st.session_state.ai_outline = response.text
+            
     except Exception as e:
         st.error(f"Lỗi khi gọi AI: {e}")
 
