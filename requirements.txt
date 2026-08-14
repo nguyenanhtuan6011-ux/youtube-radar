@@ -10,3 +10,4 @@ textblob
 wordcloud
 matplotlib
 textblob
+google-generativeai
