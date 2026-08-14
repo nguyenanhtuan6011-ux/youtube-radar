@@ -7,227 +7,203 @@ import time
 import io
 from bs4 import BeautifulSoup
 import docx
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from textblob import TextBlob
 
 # Set up giao diện Streamlit
-st.set_page_config(page_title="Radar Phân Tích Từ Khóa Đa Nguồn", page_icon="🎯", layout="wide")
-st.title("🎯 Radar Phân Tích & Bóc Tách Từ Khóa Đa Nguồn")
-st.markdown("Hỗ trợ trích xuất từ khóa từ **Thanh gợi ý YouTube**, **Kênh/Video YouTube**, **Đường link Website**, và **Tệp Office (Excel/Word/TXT)**.")
+st.set_page_config(page_title="Radar Phân Tích Từ Khóa Pro", page_icon="🎯", layout="wide")
+st.title("🎯 Radar Phân Tích Từ Khóa Đa Nguồn (Bản PRO)")
+st.markdown("Hỗ trợ trích xuất từ khóa, tạo Word Cloud, phân tích cảm xúc và so sánh đối thủ.")
 
-# Danh sách từ bỏ qua (Stopwords Anh & Việt)
+# Khởi tạo Lịch sử tìm kiếm trong Session State
+if 'history' not in st.session_state:
+    st.session_state.history = []
+
+# --- 1. XỬ LÝ STOPWORDS TÙY CHỈNH (Nâng cấp UX/UI) ---
 STOP_WORDS = {
-    # Tiếng Anh
     'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it', 'not', 'or', 
     'be', 'are', 'from', 'at', 'as', 'your', 'how', 'what', 'why', 'do', 'can', 'my', 'we', 'about', 'an', 'if', 'will', 
     'up', 'out', 'just', 'so', 'me', 'they', 'like', 'get', 'more', 'have', 'has', 'was', 'were', 'been', 'which', 'when',
     'https', 'http', 'com', 'www', 'youtube', 'watch', 'channel', 'video', 'v', 'org', 'net',
-    # Tiếng Việt
     'và', 'là', 'của', 'cho', 'trong', 'với', 'các', 'những', 'đó', 'này', 'được', 'khi', 'về', 'có', 'không', 'như',
     'đã', 'đang', 'sẽ', 'để', 'một', 'mọi', 'ra', 'vào', 'hoặc', 'vì', 'theo', 'tại', 'từ', 'nên', 'cần', 'nhưng', 'bị'
 }
 
-# --- CÁC HÀM XỬ LÝ DỮ LIỆU CỐT LÕI ---
+st.sidebar.header("⚙️ Cấu Hình Phân Tích")
+uploaded_stopwords = st.sidebar.file_uploader("Tải lên file Stopwords riêng (.txt)", type=['txt'])
+if uploaded_stopwords:
+    custom_words = uploaded_stopwords.read().decode('utf-8').splitlines()
+    STOP_WORDS.update([w.strip().lower() for w in custom_words if w.strip()])
+    st.sidebar.success(f"Đã thêm {len(custom_words)} từ khóa bỏ qua!")
 
+# Cấu hình N-gram
+ngram_choice = st.sidebar.radio("Độ dài từ khóa:", ("Từ đơn", "Cụm 2 từ", "Cụm 3 từ"))
+ngram_map = {"Từ đơn": 1, "Cụm 2 từ": 2, "Cụm 3 từ": 3}
+selected_ngram = ngram_map[ngram_choice]
+
+# Hiển thị Lịch sử (Nâng cấp Năng suất)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🕒 Lịch Sử Phân Tích")
+for item in reversed(st.session_state.history[-5:]): # Hiển thị 5 cái gần nhất
+    st.sidebar.caption(f"✓ {item}")
+
+# --- CÁC HÀM XỬ LÝ CỐT LÕI ---
+@st.cache_data(show_spinner=False)
 def lam_sach_text(text):
-    """Làm sạch văn bản, loại bỏ URL và ký tự đặc biệt"""
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
     text = re.sub(r'<[^>]+>', ' ', text)
     words = re.findall(r'\b[a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệđìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵ]+\b', text.lower())
     return words
 
 def trich_xuat_tu_khoa(danh_sach_tu, loai_ngram=1, top_n=50):
-    """Trích xuất từ đơn (1-gram), cụm 2 từ (Bigram) hoặc cụm 3 từ (Trigram)"""
     tu_hop_le = [w for w in danh_sach_tu if len(w) > 1 and w not in STOP_WORDS and not w.isdigit()]
-    
     if loai_ngram == 1:
         tokens = tu_hop_le
     elif loai_ngram == 2:
         tokens = [' '.join(tu_hop_le[i:i+2]) for i in range(len(tu_hop_le)-1)]
     else:
         tokens = [' '.join(tu_hop_le[i:i+3]) for i in range(len(tu_hop_le)-2)]
-        
-    counts = Counter(tokens)
-    return counts.most_common(top_n)
+    return Counter(tokens).most_common(top_n)
 
 def tao_file_excel(df):
-    """Xuất DataFrame ra file Excel (.xlsx) dưới dạng Binary Buffer"""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='TuKhoa')
     buffer.seek(0)
     return buffer
 
-def hien_thi_ket_qua(ket_qua_tu_khoa, ten_file_xuat="tu_khoa"):
-    """Hiển thị giao diện kết quả và nút tải về tệp Office Excel/CSV"""
+def luu_lich_su(hanh_dong):
+    if hanh_dong not in st.session_state.history:
+        st.session_state.history.append(hanh_dong)
+
+def phan_tich_cam_xuc(text):
+    """Sử dụng TextBlob để đo lường cảm xúc (chủ yếu tốt cho tiếng Anh)"""
+    blob = TextBlob(text)
+    score = blob.sentiment.polarity
+    if score > 0.1: return "Tích cực 😊"
+    elif score < -0.1: return "Tiêu cực 😠"
+    return "Trung lập 😐"
+
+def hien_thi_ket_qua(ket_qua_tu_khoa, nguyen_ban_text, ten_file_xuat="tu_khoa"):
     if not ket_qua_tu_khoa:
-        st.warning("⚠️ Không tìm thấy từ khóa phù hợp. Vui lòng thử dữ liệu đầu vào khác!")
+        st.warning("⚠️ Không tìm thấy từ khóa phù hợp.")
         return
         
-    st.success(f"🎉 Phân tích hoàn tất! Đã trích xuất được {len(ket_qua_tu_khoa)} nhóm từ khóa nổi bật.")
+    st.success(f"🎉 Phân tích hoàn tất! Trích xuất được {len(ket_qua_tu_khoa)} nhóm từ khóa.")
     
-    df = pd.DataFrame(ket_qua_tu_khoa, columns=['Từ khóa / Cụm từ', 'Tần suất xuất hiện'])
+    # Nâng cấp Cảm xúc & Gợi ý (Năng suất & Intelligence)
+    cam_xuc = phan_tich_cam_xuc(nguyen_ban_text)
+    top_1 = ket_qua_tu_khoa[0][0]
     
-    # Khu vực tải về File Office (CSV & XLSX)
+    col_info1, col_info2 = st.columns(2)
+    col_info1.info(f"**Cảm xúc chung văn bản:** {cam_xuc}")
+    col_info2.info(f"**Gợi ý tiêu đề bài viết:** 'Bí quyết hiểu rõ {top_1.capitalize()} năm 2024'")
+
+    df = pd.DataFrame(ket_qua_tu_khoa, columns=['Từ khóa / Cụm từ', 'Tần suất'])
+    
+    # Khu vực tải về
     col_dl1, col_dl2 = st.columns(2)
-    
     with col_dl1:
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Tải file CSV (Chuẩn Excel tiếng Việt)",
-            data=csv,
-            file_name=f'{ten_file_xuat}.csv',
-            mime='text/csv'
-        )
-        
+        st.download_button("📥 Tải file CSV", data=df.to_csv(index=False).encode('utf-8-sig'), file_name=f'{ten_file_xuat}.csv', mime='text/csv')
     with col_dl2:
-        excel_data = tao_file_excel(df)
-        st.download_button(
-            label="📊 Tải file Office Excel (.xlsx)",
-            data=excel_data,
-            file_name=f'{ten_file_xuat}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
+        st.download_button("📊 Tải file Excel", data=tao_file_excel(df), file_name=f'{ten_file_xuat}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         
     st.markdown("---")
     
-    # Hiển thị biểu đồ & bảng dữ liệu
-    c1, c2 = st.columns([1, 1])
+    # Hiển thị WordCloud & Bảng
+    c1, c2 = st.columns([1, 1.2])
     with c1:
-        st.subheader("🔥 Bảng Tần Suất Từ Khóa")
+        st.subheader("🔥 Bảng Tần Suất")
         st.dataframe(df, use_container_width=True)
     with c2:
-        st.subheader("📊 Biểu Đồ Top Từ Khóa")
-        df_chart = df.set_index('Từ khóa / Cụm từ')
-        st.bar_chart(df_chart.head(15))
+        st.subheader("☁️ Đám Mây Từ Khóa (Word Cloud)")
+        words_dict = dict(ket_qua_tu_khoa)
+        wc = WordCloud(width=600, height=400, background_color='white', colormap='viridis').generate_from_frequencies(words_dict)
+        fig, ax = plt.subplots()
+        ax.imshow(wc, interpolation='bilinear')
+        ax.axis("off")
+        st.pyplot(fig)
 
 # --- GIAO DIỆN CHÍNH (TABS) ---
+tab1, tab2, tab3 = st.tabs(["🔍 Google & YouTube Suggest", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
 
-tab1, tab2, tab3 = st.tabs([
-    "📺 YouTube & Kênh YouTube", 
-    "🌐 Đường Link Web (URL)", 
-    "📁 Tệp Office (.xlsx, .docx, .txt)"
-])
-
-# BỘ LỌC CHUNG CHO N-GRAM
-st.sidebar.header("⚙️ Cấu Hình Phân Tích")
-ngram_choice = st.sidebar.radio(
-    "Độ dài từ khóa (N-gram):",
-    ("Từ đơn (1 từ)", "Cụm 2 từ (Bigram)", "Cụm 3 từ (Trigram)")
-)
-ngram_map = {"Từ đơn (1 từ)": 1, "Cụm 2 từ (Bigram)": 2, "Cụm 3 từ (Trigram)": 3}
-selected_ngram = ngram_map[ngram_choice]
-
-# ================= TAB 1: YOUTUBE =================
+# ================= TAB 1: GOOGLE & YOUTUBE =================
 with tab1:
-    st.subheader("📺 Phân Tích Từ Khóa YouTube & Kênh YouTube")
-    che_do_yt = st.radio("Chọn chế độ:", ("Gợi ý thanh tìm kiếm YouTube", "Trích xuất từ Link Kênh / Video Web"))
+    st.subheader("🔍 Lấy gợi ý tìm kiếm đa nền tảng")
+    nguon_gợi_ý = st.radio("Chọn nền tảng:", ("YouTube", "Google Search"))
+    tu_khoa_nhap = st.text_input("🔑 Nhập từ khóa gốc:", key="kw_search")
     
-    if che_do_yt == "Gợi ý thanh tìm kiếm YouTube":
-        tu_khoa_yt = st.text_input("🔑 Nhập từ khóa chủ đề (VD: financial management, money, credit card):", key="yt_kw")
-        if st.button("🚀 Quét Gợi Ý YouTube"):
-            if tu_khoa_yt:
-                danh_sach_truy_van = [tu_khoa_yt] + [f"{tu_khoa_yt} {chr(i)}" for i in range(97, 123)]
-                tat_ca_suggests = []
-                bar = st.progress(0)
-                
-                for i, q in enumerate(danh_sach_truy_van):
-                    url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={q}"
-                    try:
-                        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                        if res.status_code == 200:
-                            tat_ca_suggests.extend(res.json()[1])
-                    except:
-                        pass
-                    bar.progress((i + 1) / len(danh_sach_truy_van))
-                    time.sleep(0.05)
-                bar.empty()
-                
-                words = lam_sach_text(' '.join(tat_ca_suggests))
-                res_kw = trich_xuat_tu_khoa(words, selected_ngram)
-                hien_thi_ket_qua(res_kw, f"yt_keywords_{tu_khoa_yt.replace(' ', '_')}")
-            else:
-                st.warning("Vui lòng nhập từ khóa!")
-                
-    else:
-        link_yt = st.text_input("🔗 Dán đường link Kênh hoặc Video YouTube (VD: https://www.youtube.com/@channel):", key="yt_link")
-        if st.button("🚀 Phân Tích Link YouTube"):
-            if link_yt:
-                with st.spinner("Đang kết nối và thu thập dữ liệu tiêu đề/mô tả..."):
-                    try:
-                        res = requests.get(link_yt, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-                        soup = BeautifulSoup(res.text, 'html.parser')
-                        title = soup.title.string if soup.title else ""
-                        meta_desc = ""
-                        for m in soup.find_all('meta'):
-                            if m.get('name') in ['description', 'keywords']:
-                                meta_desc += " " + str(m.get('content', ''))
-                        
-                        full_content = f"{title} {meta_desc} " + ' '.join([t.text for t in soup.find_all(['h1', 'h2', 'h3', 'span'])])
-                        words = lam_sach_text(full_content)
-                        res_kw = trich_xuat_tu_khoa(words, selected_ngram)
-                        hien_thi_ket_qua(res_kw, "yt_channel_keywords")
-                    except Exception as e:
-                        st.error(f"Không thể truy cập link: {e}")
-            else:
-                st.warning("Vui lòng nhập đường link!")
-
-# ================= TAB 2: WEBPAGE URL =================
-with tab2:
-    st.subheader("🌐 Phân Tích Đường Link Website (URL)")
-    web_url = st.text_input("🔗 Nhập địa chỉ đường link Web (VD: https://vnexpress.net/... hoặc trang tin tức/blog):")
-    
-    if st.button("🚀 Bóc Tách Từ Khóa Website"):
-        if web_url:
-            with st.spinner("Đang tải trang web và bóc tách nội dung bài viết..."):
+    if st.button("🚀 Quét Từ Khóa Mở Rộng"):
+        if tu_khoa_nhap:
+            danh_sach_truy_van = [tu_khoa_nhap] + [f"{tu_khoa_nhap} {chr(i)}" for i in range(97, 123)]
+            tat_ca_suggests = []
+            bar = st.progress(0)
+            
+            client_type = "yt" if nguon_gợi_ý == "YouTube" else "chrome"
+            for i, q in enumerate(danh_sach_truy_van):
+                url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds={client_type}&q={q}" if nguon_gợi_ý == "YouTube" else f"https://suggestqueries.google.com/complete/search?client=firefox&q={q}"
                 try:
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-                    res = requests.get(web_url, headers=headers, timeout=10)
+                    res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
                     if res.status_code == 200:
-                        soup = BeautifulSoup(res.text, 'html.parser')
-                        # Xóa các thẻ script, style không cần thiết
-                        for script in soup(["script", "style", "nav", "footer"]):
-                            script.decompose()
-                            
-                        text_blocks = [tag.get_text() for tag in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'article'])]
-                        full_text = ' '.join(text_blocks)
-                        
-                        words = lam_sach_text(full_text)
-                        res_kw = trich_xuat_tu_khoa(words, selected_ngram)
-                        hien_thi_ket_qua(res_kw, "web_url_keywords")
-                    else:
-                        st.error(f"Không thể truy cập trang web (Mã lỗi: {res.status_code})")
-                except Exception as e:
-                    st.error(f"Lỗi truy cập URL: {e}")
-        else:
-            st.warning("Vui lòng nhập đường link URL!")
+                        tat_ca_suggests.extend(res.json()[1])
+                except: pass
+                bar.progress((i + 1) / len(danh_sach_truy_van))
+                time.sleep(0.05)
+            
+            bar.empty()
+            full_text = ' '.join(tat_ca_suggests)
+            res_kw = trich_xuat_tu_khoa(lam_sach_text(full_text), selected_ngram)
+            luu_lich_su(f"Quét {nguon_gợi_ý}: {tu_khoa_nhap}")
+            hien_thi_ket_qua(res_kw, full_text, f"{nguon_gợi_ý}_{tu_khoa_nhap}")
+
+# ================= TAB 2: SO SÁNH WEBSITE (Intelligence) =================
+with tab2:
+    st.subheader("🌐 Phân Tích & So Sánh Website")
+    che_do_web = st.radio("Chế độ:", ("Phân tích 1 Website", "So sánh 2 Đối thủ (A vs B)"))
+    
+    url1 = st.text_input("🔗 Nhập URL trang 1:")
+    url2 = st.text_input("🔗 Nhập URL trang 2 (đối thủ):") if che_do_web == "So sánh 2 Đối thủ (A vs B)" else None
+    
+    def lay_chu_web(url):
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for script in soup(["script", "style"]): script.decompose()
+        return ' '.join([tag.get_text() for tag in soup.find_all(['p', 'h1', 'h2', 'article'])])
+
+    if st.button("🚀 Tiến Hành Phân Tích URL"):
+        if che_do_web == "Phân tích 1 Website" and url1:
+            text1 = lay_chu_web(url1)
+            res_kw = trich_xuat_tu_khoa(lam_sach_text(text1), selected_ngram)
+            luu_lich_su(f"Phân tích web: {url1}")
+            hien_thi_ket_qua(res_kw, text1, "Web_Keywords")
+            
+        elif che_do_web == "So sánh 2 Đối thủ (A vs B)" and url1 and url2:
+            text1, text2 = lay_chu_web(url1), lay_chu_web(url2)
+            kw1 = dict(trich_xuat_tu_khoa(lam_sach_text(text1), selected_ngram))
+            kw2 = dict(trich_xuat_tu_khoa(lam_sach_text(text2), selected_ngram))
+            
+            # Kết hợp dữ liệu 2 trang web
+            all_keys = set(kw1.keys()).union(set(kw2.keys()))
+            compare_data = [{"Từ khóa": k, "Tần suất Web 1": kw1.get(k, 0), "Tần suất Web 2": kw2.get(k, 0)} for k in all_keys]
+            df_compare = pd.DataFrame(compare_data).sort_values(by="Tần suất Web 1", ascending=False).head(30)
+            
+            st.success("✅ Đã so sánh xong 2 trang web!")
+            st.dataframe(df_compare, use_container_width=True)
+            luu_lich_su(f"So sánh: {url1} vs {url2}")
 
 # ================= TAB 3: OFFICE FILES =================
 with tab3:
-    st.subheader("📁 Tải Lên Tệp Office Để Phân Tích (.xlsx, .csv, .docx, .txt)")
-    uploaded_file = st.file_uploader("Chọn file từ máy tính của bạn:", type=['xlsx', 'csv', 'docx', 'txt'])
+    st.subheader("📁 Tải Lên Tệp Office")
+    uploaded_file = st.file_uploader("Chọn file (xlsx, csv, docx, txt):", type=['xlsx', 'csv', 'docx', 'txt'])
     
-    if st.button("🚀 Phân Tích Tệp Office"):
-        if uploaded_file is not None:
-            with st.spinner("Đang đọc nội dung file Office..."):
-                file_text = ""
-                file_name = uploaded_file.name
-                
-                try:
-                    if file_name.endswith('.csv'):
-                        df_in = pd.read_csv(uploaded_file)
-                        file_text = ' '.join(df_in.astype(str).values.flatten())
-                    elif file_name.endswith('.xlsx'):
-                        df_in = pd.read_excel(uploaded_file)
-                        file_text = ' '.join(df_in.astype(str).values.flatten())
-                    elif file_name.endswith('.docx'):
-                        doc = docx.Document(uploaded_file)
-                        file_text = ' '.join([p.text for p in doc.paragraphs])
-                    elif file_name.endswith('.txt'):
-                        file_text = uploaded_file.read().decode('utf-8', errors='ignore')
-                        
-                    words = lam_sach_text(file_text)
-                    res_kw = trich_xuat_tu_khoa(words, selected_ngram)
-                    hien_thi_ket_qua(res_kw, f"office_keywords_{file_name.split('.')[0]}")
-                except Exception as e:
-                    st.error(f"Lỗi đọc file Office: {e}")
-        else:
-            st.warning("Vui lòng chọn tệp trước khi bấm phân tích!")
+    if st.button("🚀 Phân Tích Tệp Office") and uploaded_file:
+        file_text, file_name = "", uploaded_file.name
+        if file_name.endswith('.csv'): file_text = ' '.join(pd.read_csv(uploaded_file).astype(str).values.flatten())
+        elif file_name.endswith('.xlsx'): file_text = ' '.join(pd.read_excel(uploaded_file).astype(str).values.flatten())
+        elif file_name.endswith('.docx'): file_text = ' '.join([p.text for p in docx.Document(uploaded_file).paragraphs])
+        elif file_name.endswith('.txt'): file_text = uploaded_file.read().decode('utf-8', errors='ignore')
+            
+        res_kw = trich_xuat_tu_khoa(lam_sach_text(file_text), selected_ngram)
+        luu_lich_su(f"Phân tích file: {file_name}")
+        hien_thi_ket_qua(res_kw, file_text, f"office_{file_name}")
