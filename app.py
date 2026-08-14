@@ -107,7 +107,7 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_result = ""
 
-# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
+# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG (ĐÃ TĂNG THỜI GIAN CHỜ LÊN 120 GIÂY) ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
@@ -146,10 +146,11 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
         success = False
-        with st.spinner(f"🤖 Trợ lý AI đang xử lý yêu cầu: {che_do}..."):
+        with st.spinner(f"🤖 Trợ lý AI đang xử lý yêu cầu: {che_do} (Quá trình này có thể mất 1-2 phút, vui lòng chờ)..."):
             for model_name in valid_models:
                 url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=25)
+                # ĐÃ TĂNG TIMEOUT LÊN 120 GIÂY Ở ĐÂY
+                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=120) 
                 
                 if resp_gen.status_code == 200:
                     data = resp_gen.json()
@@ -304,7 +305,7 @@ if st.session_state.current_kw:
         
     st.markdown("---")
     
-    # 📊 KHU VỰC BÁO CÁO PHÂN TÍCH (Bổ sung biểu đồ Tròn)
+    # 📊 KHU VỰC BÁO CÁO PHÂN TÍCH
     st.subheader("📊 Báo Cáo Phân Tích Dữ Liệu")
     
     c1, c2, c3 = st.columns([1.5, 1, 1])
