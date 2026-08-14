@@ -14,7 +14,7 @@ from textblob import TextBlob
 # Set up giao diện Streamlit
 st.set_page_config(page_title="Radar Phân Tích Từ Khóa Pro", page_icon="🎯", layout="wide")
 st.title("🎯 Radar Phân Tích Từ Khóa Đa Nguồn (Bản PRO)")
-st.markdown("Hỗ trợ trích xuất từ khóa, tạo Word Cloud, phân tích cảm xúc và so sánh đối thủ.")
+st.markdown("Hỗ trợ trích xuất từ khóa, tạo Word Cloud, phân tích cảm xúc, so sánh đối thủ và quét thị trường quốc tế.")
 
 # Khởi tạo Lịch sử tìm kiếm trong Session State
 if 'history' not in st.session_state:
@@ -128,34 +128,66 @@ def hien_thi_ket_qua(ket_qua_tu_khoa, nguyen_ban_text, ten_file_xuat="tu_khoa"):
 # --- GIAO DIỆN CHÍNH (TABS) ---
 tab1, tab2, tab3 = st.tabs(["🔍 Google & YouTube Suggest", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
 
-# ================= TAB 1: GOOGLE & YOUTUBE =================
+# ================= TAB 1: GOOGLE & YOUTUBE QUỐC TẾ =================
 with tab1:
-    st.subheader("🔍 Lấy gợi ý tìm kiếm đa nền tảng")
-    nguon_gợi_ý = st.radio("Chọn nền tảng:", ("YouTube", "Google Search"))
-    tu_khoa_nhap = st.text_input("🔑 Nhập từ khóa gốc:", key="kw_search")
+    st.subheader("🔍 Lấy gợi ý tìm kiếm đa quốc gia")
     
-    if st.button("🚀 Quét Từ Khóa Mở Rộng"):
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        nguon_gợi_ý = st.selectbox("Chọn nền tảng:", ("YouTube", "Google Search"))
+    with col_opt2:
+        quoc_gia = st.selectbox(
+            "🌍 Chọn thị trường (Quốc gia):",
+            ("Việt Nam (VN)", "Mỹ (US)", "Anh - UK (Châu Âu)", "Đức - DE (Châu Âu)", "Pháp - FR (Châu Âu)", "Toàn cầu")
+        )
+    
+    tu_khoa_nhap = st.text_input("🔑 Nhập từ khóa gốc (VD: make money online, credit card):", key="kw_search")
+    
+    market_map = {
+        "Việt Nam (VN)": {"gl": "vn", "hl": "vi"},
+        "Mỹ (US)": {"gl": "us", "hl": "en"},
+        "Anh - UK (Châu Âu)": {"gl": "gb", "hl": "en"},
+        "Đức - DE (Châu Âu)": {"gl": "de", "hl": "de"},
+        "Pháp - FR (Châu Âu)": {"gl": "fr", "hl": "fr"},
+        "Toàn cầu": {"gl": "", "hl": "en"}
+    }
+    
+    if st.button("🚀 Quét Từ Khóa Theo Thị Trường"):
         if tu_khoa_nhap:
+            gl = market_map[quoc_gia]["gl"]
+            hl = market_map[quoc_gia]["hl"]
+            
             danh_sach_truy_van = [tu_khoa_nhap] + [f"{tu_khoa_nhap} {chr(i)}" for i in range(97, 123)]
             tat_ca_suggests = []
             bar = st.progress(0)
             
             client_type = "yt" if nguon_gợi_ý == "YouTube" else "chrome"
+            
             for i, q in enumerate(danh_sach_truy_van):
-                url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds={client_type}&q={q}" if nguon_gợi_ý == "YouTube" else f"https://suggestqueries.google.com/complete/search?client=firefox&q={q}"
+                if nguon_gợi_ý == "YouTube":
+                    url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds={client_type}&q={q}&hl={hl}&gl={gl}"
+                else:
+                    url = f"https://suggestqueries.google.com/complete/search?client=firefox&q={q}&hl={hl}&gl={gl}"
+                
                 try:
                     res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
                     if res.status_code == 200:
                         tat_ca_suggests.extend(res.json()[1])
-                except: pass
+                except: 
+                    pass
+                
                 bar.progress((i + 1) / len(danh_sach_truy_van))
                 time.sleep(0.05)
             
             bar.empty()
             full_text = ' '.join(tat_ca_suggests)
             res_kw = trich_xuat_tu_khoa(lam_sach_text(full_text), selected_ngram)
-            luu_lich_su(f"Quét {nguon_gợi_ý}: {tu_khoa_nhap}")
-            hien_thi_ket_qua(res_kw, full_text, f"{nguon_gợi_ý}_{tu_khoa_nhap}")
+            
+            luu_lich_su(f"Quét {nguon_gợi_ý} ({quoc_gia}): {tu_khoa_nhap}")
+            ten_file = f"{nguon_gợi_ý}_{market_map[quoc_gia]['gl']}_{tu_khoa_nhap.replace(' ', '_')}"
+            hien_thi_ket_qua(res_kw, full_text, ten_file)
+        else:
+            st.warning("⚠️ Vui lòng nhập từ khóa gốc trước khi quét!")
 
 # ================= TAB 2: SO SÁNH WEBSITE (Intelligence) =================
 with tab2:
