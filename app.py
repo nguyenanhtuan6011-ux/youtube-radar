@@ -107,42 +107,57 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_outline = ""
 
-# --- HÀM TẠO DÀN Ý BẰNG AI (CẬP NHẬT CHUẨN HEADER DÀNH RIÊNG CHO KHÓA AQ.) ---
+# --- HÀM TẠO DÀN Ý AI (TỰ ĐỘNG DÒ MODEL QUA HTTP) ---
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
         
-    prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
-    Hãy giúp tôi: 
-    1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
-    2. Lập một Dàn ý (Outline) chi tiết chuẩn SEO (H2, H3) để viết bài."""
-    
-    # Sử dụng model gemini-1.5-flash mới nhất
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-    
-    # Truyền khóa AQ. qua Header (x-goog-api-key) thay vì URL
-    headers = {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': gemini_api_key
-    }
-    
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
-    
-    with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ để viết dàn ý..."):
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
+    # Bước 1: Lấy danh sách các Model mà API Key này được phép truy cập
+    url_list = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_api_key}"
+    try:
+        res_list = requests.get(url_list, timeout=10)
+        if res_list.status_code != 200:
+            st.error(f"❌ Khóa API không hợp lệ hoặc bị chặn: {res_list.text}")
+            return
+            
+        models_data = res_list.json().get('models', [])
+        # Lọc ra các model có khả năng viết chữ (generateContent)
+        valid_models = [m['name'] for m in models_data if 'generateContent' in m.get('supportedGenerationMethods', [])]
+        
+        if not valid_models:
+            st.error("❌ Tài khoản Google của bạn không có mô hình nào hỗ trợ viết bài.")
+            return
+
+        # Tự động chọn mô hình ngon nhất (ưu tiên gemini)
+        chosen_model = valid_models[0]
+        for m in valid_models:
+            if 'gemini' in m and 'vision' not in m:
+                chosen_model = m
+                break
+                
+        # Hiển thị cho người dùng biết hệ thống đang dùng model nào
+        st.info(f"🔍 Hệ thống đã tự động kết nối thành công với mô hình: **{chosen_model}**")
+        
+        # Bước 2: Gọi AI viết bài
+        prompt = f"""Bạn là một chuyên gia SEO. Dựa vào Top từ khóa sau: {tu_khoa_list}. 
+        Hãy: 1. Đề xuất 3 Tiêu đề hấp dẫn. 2. Lập Dàn ý (H2, H3) chuẩn SEO."""
+        
+        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{chosen_model}:generateContent?key={gemini_api_key}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        
+        with st.spinner("🤖 Trợ lý AI đang vắt óc suy nghĩ..."):
+            resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=30)
+            if resp_gen.status_code == 200:
+                data = resp_gen.json()
                 st.session_state.ai_outline = data['candidates'][0]['content']['parts'][0]['text']
-                st.rerun() # Load lại trang hiển thị kết quả
+                st.rerun() # Tải lại trang để hiện kết quả
             else:
-                error_msg = response.json().get('error', {}).get('message', 'Không rõ lỗi')
-                st.error(f"Lỗi từ máy chủ Google ({response.status_code}): {error_msg}")
-        except Exception as e:
-            st.error(f"Lỗi kết nối mạng: {e}")
+                st.error(f"Lỗi khi viết bài ({resp_gen.status_code}): {resp_gen.text}")
+                
+    except Exception as e:
+        st.error(f"Lỗi đường truyền Internet: {e}")
 
 # ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
 tab1, tab2, tab3 = st.tabs(["📺 YouTube & Gợi Ý", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
@@ -242,7 +257,7 @@ with tab3:
         elif file_name.endswith('.txt'): file_text = uploaded_file.read().decode('utf-8', errors='ignore')
         luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(file_text), selected_ngram), file_text, f"office_{file_name}")
 
-# ================= GIAO DIỆN HIỂN THỊ KẾT QUẢ (CỐ ĐỊNH Ở DƯỚI) =================
+# ================= GIAO DIỆN HIỂN THỊ KẾT QUẢ =================
 if st.session_state.current_kw:
     st.markdown("---")
     st.success(f"🎉 Trích xuất thành công {len(st.session_state.current_kw)} nhóm từ khóa.")
