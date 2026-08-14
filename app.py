@@ -102,21 +102,20 @@ def luu_lich_su(hanh_dong):
     if hanh_dong not in st.session_state.history:
         st.session_state.history.append(hanh_dong)
 
-# Hàm lưu dữ liệu vào bộ nhớ tạm
 def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_kw = res_kw
     st.session_state.current_text = full_text
     st.session_state.current_file = ten_file
-    st.session_state.ai_outline = "" # Reset dàn ý cũ
+    st.session_state.ai_outline = ""
 
-# Hàm tạo dàn ý (Sử dụng session_state để không bị mất kết quả)
 def tao_dan_y_ai(tu_khoa_list):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
         return
     try:
         genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Đã đổi từ 'gemini-1.5-flash' sang 'gemini-pro' để khắc phục triệt để lỗi 404
+        model = genai.GenerativeModel('gemini-pro')
         prompt = f"""Bạn là một chuyên gia SEO hàng đầu. Dựa vào Top các từ khóa sau đây: {tu_khoa_list}. 
         Hãy giúp tôi: 
         1. Đề xuất 3 Tiêu đề bài viết siêu hấp dẫn (Giật tít, thu hút click).
@@ -246,7 +245,7 @@ if st.session_state.current_kw:
         
     st.markdown("---")
     
-    # 🤖 KHU VỰC TRỢ LÝ AI (Sửa lỗi mất kết quả)
+    # 🤖 KHU VỰC TRỢ LÝ AI
     top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
     if st.button("✨ Dùng AI viết Dàn Ý Bài Viết dựa trên Top Từ Khóa"):
         tao_dan_y_ai(top_10_words)
