@@ -107,7 +107,7 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_file = ten_file
     st.session_state.ai_result = ""
 
-# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG (ĐÃ TĂNG THỜI GIAN CHỜ LÊN 120 GIÂY) ---
+# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG (TIMEOUT LÀ 120 GIÂY) ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
@@ -129,19 +129,39 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
             st.error("❌ Không tìm thấy mô hình khả dụng.")
             return
 
-        # Soạn Prompt dựa theo lựa chọn của người dùng
+        # Soạn Prompt dựa theo lựa chọn
         if che_do == "📝 Lập Dàn Ý SEO (Outline)":
             prompt = f"Bạn là chuyên gia SEO. Dựa vào Top từ khóa: {tu_khoa_list}. Hãy đề xuất 3 Tiêu đề hấp dẫn và lập Dàn ý (H2, H3) chi tiết chuẩn SEO."
         elif che_do == "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)":
             prompt = f"Bạn là một Copywriter chuyên nghiệp. Dựa vào bộ từ khóa: {tu_khoa_list}. Hãy viết một bài Blog chuẩn SEO hoàn chỉnh, dài khoảng 1000 từ. Bố cục rõ ràng, có mở bài, thân bài (chia các Heading H2, H3) và kết bài. Lồng ghép từ khóa một cách tự nhiên nhất."
         elif che_do == "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)":
-            prompt = f"Bạn là một chuyên gia sáng tạo nội dung Video ngắn. Từ các từ khóa xu hướng này: {tu_khoa_list}. Hãy viết một kịch bản Video dọc (dưới 60 giây). Bao gồm: 1. Hook (Câu móc nối 3 giây đầu gây sốc/tò mò), 2. Body (Nội dung chính diễn giải chi tiết), 3. CTA (Kêu gọi hành động). Cung cấp cả gợi ý hình ảnh/chữ chạy trên màn hình (Text on screen)."
+            prompt = f"Bạn là chuyên gia sáng tạo nội dung Video ngắn. Từ các từ khóa xu hướng này: {tu_khoa_list}. Hãy viết kịch bản Video dọc (dưới 60 giây). Bao gồm: 1. Hook, 2. Body, 3. CTA. Cung cấp cả gợi ý hình ảnh/chữ chạy trên màn hình (Text on screen)."
         elif che_do == "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)":
-            prompt = f"Bạn là chuyên gia chốt sale trên các sàn thương mại điện tử. Dựa vào danh sách từ khóa nhu cầu này: {tu_khoa_list}. Hãy viết: 1. 3 phương án Tiêu đề Sản phẩm giật tít, chuẩn SEO. 2. Một đoạn Mô tả sản phẩm (Product Description) đánh mạnh vào nỗi đau khách hàng, nêu bật lợi ích và lồng ghép từ khóa để tối ưu thứ hạng tìm kiếm."
+            prompt = f"Bạn là chuyên gia chốt sale TMĐT. Dựa vào danh sách từ khóa: {tu_khoa_list}. Hãy viết: 1. 3 Tiêu đề Sản phẩm giật tít, chuẩn SEO. 2. Đoạn Mô tả sản phẩm (Product Description) đánh mạnh vào nỗi đau khách hàng, lồng ghép từ khóa."
         elif che_do == "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)":
-            if "youtube" not in st.session_state.current_file.lower() and "yt" not in st.session_state.current_file.lower():
-                st.warning("Tính năng này hoạt động tốt nhất khi bạn nhập Link YouTube của đối thủ ở Tab 1. AI sẽ phân tích text hiện tại, nhưng có thể không chính xác nếu đây không phải dữ liệu từ YouTube.")
-            prompt = f"Dưới đây là dữ liệu (Tiêu đề, mô tả, và possibly comments) trích xuất từ Video YouTube của đối thủ: \n\n{text_goc[:5000]}\n\nBạn là một YouTuber chuyên nghiệp. Hãy phân tích nội dung trên và viết ra một Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ và HẤP DẪN HƠN cho kênh của tôi. Cấu trúc kịch bản bao gồm: Tiêu đề thu hút, Hook, Intro, Body (Các luận điểm chính được diễn giải chi tiết hơn đối thủ), và Outro/CTA."
+            prompt = f"Dữ liệu trích xuất từ Video YouTube của đối thủ: \n\n{text_goc[:5000]}\n\nBạn là YouTuber chuyên nghiệp. Hãy viết ra một Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ và HẤP DẪN HƠN cho kênh của tôi. Cấu trúc: Tiêu đề, Hook, Intro, Body, Outro/CTA."
+        elif che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
+            prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Dựa vào bộ từ khóa và dữ liệu cào được sau: {tu_khoa_list} \nNội dung tham khảo: {text_goc[:3000]}
+            Hãy viết một kịch bản video (chia làm khoảng 5-8 Parts) theo ĐÚNG định dạng chuẩn của thương hiệu "SILENT CAPITAL".
+            
+            Nhân vật chính xuyên suốt là Ethan Walker (đàn ông trung niên, tóc hoa râm, đeo kính tròn, mặc áo len xanh navy). Cốt truyện phải đi từ Cám dỗ -> Cái giá phải trả -> Bài học tài chính/phát triển bản thân sâu sắc ở cuối video.
+            
+            Cấu trúc BẮT BUỘC phải tuân thủ NGHIÊM NGẶT cho mỗi Part (Trình bày đúng như form mẫu):
+            
+            [TÊN PART - IN HOA, VÍ DỤ: PART 01 - THE SEDUCTION]
+            English word count: [Ghi rõ số lượng từ tiếng Anh, viết sao cho đọc trong 30-35 giây, khoảng 80-95 từ]
+            
+            VOICE SCRIPT
+            [Kịch bản tiếng Anh. BẮT BUỘC ngắt dòng xuống hàng từng câu ngắn để tạo nhịp điệu Cinematic, giống như một bài thơ]
+            
+            VIETNAMESE TRANSLATION
+            [Bản dịch tiếng Việt sát nghĩa. BẮT BUỘC ngắt dòng xuống hàng tương ứng với bản tiếng Anh]
+            
+            KEY MESSAGE
+            [1 câu tóm tắt thông điệp cốt lõi bằng tiếng Anh và tiếng Việt]
+            
+            PRODUCTION NOTE
+            [Hướng dẫn chi tiết góc máy, ánh sáng, hành động của Ethan Walker để tạo ảnh và dựng phim. Giữ nguyên Master Style: Flat 2D stickman, cinematic lighting]"""
 
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
@@ -149,7 +169,7 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
         with st.spinner(f"🤖 Trợ lý AI đang xử lý yêu cầu: {che_do} (Quá trình này có thể mất 1-2 phút, vui lòng chờ)..."):
             for model_name in valid_models:
                 url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-                # ĐÃ TĂNG TIMEOUT LÊN 120 GIÂY Ở ĐÂY
+                # Đảm bảo timeout = 120s cho kịch bản dài
                 resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=120) 
                 
                 if resp_gen.status_code == 200:
@@ -291,7 +311,8 @@ if st.session_state.current_kw:
         "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)",
         "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)",
         "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)",
-        "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)"
+        "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)",
+        "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)"
     ])
     
     top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
