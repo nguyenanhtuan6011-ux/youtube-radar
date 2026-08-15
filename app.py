@@ -22,9 +22,10 @@ if 'current_kw' not in st.session_state: st.session_state.current_kw = None
 if 'current_text' not in st.session_state: st.session_state.current_text = ""
 if 'current_file' not in st.session_state: st.session_state.current_file = ""
 if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
+if 'sc_memory' not in st.session_state: st.session_state.sc_memory = ""
+if 'sc_part' not in st.session_state: st.session_state.sc_part = 1
 
 # --- CẤU HÌNH API KEY TỰ ĐỘNG TỪ SECRETS (SIDEBAR) ---
-# Tự động lấy key từ Streamlit Secrets nếu đã được cài đặt
 default_gemini = st.secrets.get("GEMINI_API_KEY", "") if "GEMINI_API_KEY" in st.secrets else ""
 default_yt = st.secrets.get("YOUTUBE_API_KEY", "") if "YOUTUBE_API_KEY" in st.secrets else ""
 
@@ -110,9 +111,12 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_text = full_text
     st.session_state.current_file = ten_file
     st.session_state.ai_result = ""
+    # Xóa bộ nhớ cũ khi quét file mới
+    st.session_state.sc_memory = ""
+    st.session_state.sc_part = 1
 
-# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG (TIMEOUT LÀ 120 GIÂY) ---
-def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
+# --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
+def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
     if not gemini_api_key:
         st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) hoặc cấu hình trong Settings > Secrets để dùng tính năng này!")
         return
@@ -133,6 +137,12 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
             st.error("❌ Không tìm thấy mô hình khả dụng.")
             return
 
+        # Khởi tạo bộ nhớ nếu bắt đầu kịch bản mới
+        if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
+            if not is_continue:
+                st.session_state.sc_memory = ""
+                st.session_state.sc_part = 1
+
         # Soạn Prompt dựa theo lựa chọn
         if che_do == "📝 Lập Dàn Ý SEO (Outline)":
             prompt = f"Bạn là chuyên gia SEO. Dựa vào Top từ khóa: {tu_khoa_list}. Hãy đề xuất 3 Tiêu đề hấp dẫn và lập Dàn ý (H2, H3) chi tiết chuẩn SEO."
@@ -144,16 +154,35 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
             prompt = f"Bạn là chuyên gia chốt sale TMĐT. Dựa vào danh sách từ khóa: {tu_khoa_list}. Hãy viết: 1. 3 Tiêu đề Sản phẩm giật tít, chuẩn SEO. 2. Đoạn Mô tả sản phẩm (Product Description) đánh mạnh vào nỗi đau khách hàng, lồng ghép từ khóa."
         elif che_do == "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)":
             prompt = f"Dữ liệu trích xuất từ Video YouTube của đối thủ: \n\n{text_goc[:5000]}\n\nBạn là YouTuber chuyên nghiệp. Hãy viết ra một Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ và HẤP DẪN HƠN cho kênh của tôi. Cấu trúc: Tiêu đề, Hook, Intro, Body, Outro/CTA."
+        elif che_do == "🧠 Phản Biện Kịch Bản (Script Doctor)":
+            # Ưu tiên lấy kịch bản đang viết dở trong bộ nhớ, nếu không có thì lấy dữ liệu quét được
+            script_to_critique = st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:3000]
+            prompt = f"""Bạn là một Đạo diễn và Cố vấn Kịch bản (Script Doctor) cực kỳ khắt khe. 
+            Hãy đọc kỹ nội dung/kịch bản sau đây:
+            
+            {script_to_critique}
+            
+            Hãy đóng vai trò người phản biện để giúp tôi nâng cấp kịch bản này lên mức xuất sắc nhất. Hãy phân tích các điểm sau:
+            1. 🔍 **Điểm mù Logic:** Hành động, tâm lý nhân vật hoặc cách triển khai vấn đề có chỗ nào khiên cưỡng, thiếu thực tế không?
+            2. ❤️ **Điểm nghẽn Cảm xúc:** Đoạn nào bị đều đều, chán ngắt, hoặc chưa đủ sức nặng để chạm đến nỗi đau của khán giả?
+            3. ⏱️ **Nhịp điệu (Pacing):** Cấu trúc phân bổ thời lượng đã tốt chưa? Có bị rườm rà ở đâu không?
+            4. 💡 **3 Đề xuất Sửa đổi Cụ thể:** Gợi ý chính xác câu chữ, tình huống hoặc góc máy cần thay đổi để kịch bản sắc bén và sâu sắc hơn."""
         elif che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
-            prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Dựa vào bộ từ khóa và dữ liệu cào được sau: {tu_khoa_list} \nNội dung tham khảo: {text_goc[:3000]}
-            Hãy viết một kịch bản video (chia làm khoảng 5-8 Parts) theo ĐÚNG định dạng chuẩn của thương hiệu "SILENT CAPITAL".
+            prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Đang viết kịch bản chuẩn "SILENT CAPITAL" dựa vào danh sách từ khóa: {tu_khoa_list}
+            Nội dung nghiên cứu ban đầu: {text_goc[:3000]}
             
-            Nhân vật chính xuyên suốt là Ethan Walker (đàn ông trung niên, tóc hoa râm, đeo kính tròn, mặc áo len xanh navy). Cốt truyện phải đi từ Cám dỗ -> Cái giá phải trả -> Bài học tài chính/phát triển bản thân sâu sắc ở cuối video.
+            Đây là những phần kịch bản đã viết từ trước (Hãy đọc kỹ để nắm bắt mạch truyện, tuyệt đối KHÔNG viết lại các phần này):
+            {st.session_state.sc_memory}
             
-            Cấu trúc BẮT BUỘC phải tuân thủ NGHIÊM NGẶT cho mỗi Part (Trình bày đúng như form mẫu):
+            NHIỆM VỤ HIỆN TẠI CỦA BẠN LÀ:
+            Hãy viết **DUY NHẤT PART {st.session_state.sc_part}**. TUYỆT ĐỐI KHÔNG viết lố sang các Part tiếp theo. 
+            Nếu là Part 1, hãy viết The Hook (Giới thiệu bối cảnh, vấn đề tài chính của nhân vật Ethan Walker).
+            Nếu là các Part sau, hãy viết tiếp nối logic của câu chuyện trước đó để đẩy câu chuyện lên cao trào hoặc đi đến bài học kết luận.
             
-            [TÊN PART - IN HOA, VÍ DỤ: PART 01 - THE SEDUCTION]
-            English word count: [Ghi rõ số lượng từ tiếng Anh, viết sao cho đọc trong 30-35 giây, khoảng 80-95 từ]
+            Cấu trúc BẮT BUỘC (trình bày đúng form mẫu):
+            
+            [PART {st.session_state.sc_part} - TÊN PART IN HOA]
+            English word count: [Ghi rõ số lượng từ tiếng Anh, thiết kế để đọc trong 30-35 giây, khoảng 80-95 từ]
             
             VOICE SCRIPT
             [Kịch bản tiếng Anh. BẮT BUỘC ngắt dòng xuống hàng từng câu ngắn để tạo nhịp điệu Cinematic, giống như một bài thơ]
@@ -165,20 +194,27 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
             [1 câu tóm tắt thông điệp cốt lõi bằng tiếng Anh và tiếng Việt]
             
             PRODUCTION NOTE
-            [Hướng dẫn chi tiết góc máy, ánh sáng, hành động của Ethan Walker để tạo ảnh và dựng phim. Giữ nguyên Master Style: Flat 2D stickman, cinematic lighting]"""
+            [Hướng dẫn chi tiết góc máy, ánh sáng, hành động của Ethan Walker. Master Style: Flat 2D stickman, cinematic lighting]"""
 
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
         success = False
-        with st.spinner(f"🤖 Trợ lý AI đang xử lý yêu cầu: {che_do} (Quá trình này có thể mất 1-2 phút, vui lòng chờ)..."):
+        with st.spinner(f"🤖 Trợ lý AI đang xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
             for model_name in valid_models:
                 url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-                # Đảm bảo timeout = 120s cho kịch bản dài
-                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=120) 
+                resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
                 
                 if resp_gen.status_code == 200:
                     data = resp_gen.json()
-                    st.session_state.ai_result = data['candidates'][0]['content']['parts'][0]['text']
+                    new_content = data['candidates'][0]['content']['parts'][0]['text']
+                    
+                    if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
+                        st.session_state.sc_memory += f"\n\n{new_content}"
+                        st.session_state.ai_result = st.session_state.sc_memory
+                        st.session_state.sc_part += 1
+                    else:
+                        st.session_state.ai_result = new_content
+                        
                     success = True
                     break
                     
@@ -316,18 +352,31 @@ if st.session_state.current_kw:
         "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)",
         "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)",
         "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)",
-        "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)"
+        "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)",
+        "🧠 Phản Biện Kịch Bản (Script Doctor)"
     ])
     
     top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
     
-    if st.button(f"✨ Kích Hoạt Trợ Lý AI: {che_do_ai.split(' ')[1]}"):
-        xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text)
+    if st.button(f"✨ Kích Hoạt Trợ Lý AI"):
+        xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text, is_continue=False)
         
     if st.session_state.ai_result:
         st.success("✅ Trợ lý AI đã hoàn thành xuất sắc nhiệm vụ!")
         st.markdown(st.session_state.ai_result)
         
+        # HIỂN THỊ NÚT VIẾT TIẾP VÀ XUẤT FILE CHO CHẾ ĐỘ SILENT CAPITAL
+        if che_do_ai == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
+            st.info(f"💡 AI vừa hoàn thành **Part {st.session_state.sc_part - 1}**. Bạn có thể yêu cầu AI viết tiếp hoặc tải file về máy.")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button(f"✍️ Viết tiếp Part {st.session_state.sc_part}"):
+                    xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text, is_continue=True)
+            with col_btn2:
+                if st.session_state.sc_memory:
+                    st.download_button("📥 Tải File Kịch Bản (.TXT)", data=st.session_state.sc_memory, file_name="Kich_Ban_Silent_Capital.txt", mime="text/plain")
+                
     st.markdown("---")
     
     # 📊 KHU VỰC BÁO CÁO PHÂN TÍCH
