@@ -23,10 +23,14 @@ if 'current_text' not in st.session_state: st.session_state.current_text = ""
 if 'current_file' not in st.session_state: st.session_state.current_file = ""
 if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
 
-# --- CẤU HÌNH API KEY (SIDEBAR) ---
+# --- CẤU HÌNH API KEY TỰ ĐỘNG TỪ SECRETS (SIDEBAR) ---
+# Tự động lấy key từ Streamlit Secrets nếu đã được cài đặt
+default_gemini = st.secrets.get("GEMINI_API_KEY", "") if "GEMINI_API_KEY" in st.secrets else ""
+default_yt = st.secrets.get("YOUTUBE_API_KEY", "") if "YOUTUBE_API_KEY" in st.secrets else ""
+
 st.sidebar.header("🔑 Cấu Hình API (Tùy chọn)")
-gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI viết bài):", type="password")
-yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để quét Comment):", type="password")
+gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI viết bài):", value=default_gemini, type="password")
+yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để quét Comment):", value=default_yt, type="password")
 st.sidebar.caption("Lấy Gemini API miễn phí tại: aistudio.google.com")
 
 st.sidebar.markdown("---")
@@ -110,7 +114,7 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
 # --- HÀM TẠO NỘI DUNG AI ĐA NĂNG (TIMEOUT LÀ 120 GIÂY) ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc):
     if not gemini_api_key:
-        st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) để dùng tính năng này!")
+        st.error("⚠️ Bạn cần dán Gemini API Key ở thanh bên (Sidebar) hoặc cấu hình trong Settings > Secrets để dùng tính năng này!")
         return
         
     url_list = "https://generativelanguage.googleapis.com/v1beta/models"
