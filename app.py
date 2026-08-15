@@ -137,7 +137,6 @@ def ai_cham_diem_thumbnail(img_url, title):
     if not model or not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
     
     try:
-        # Tải ảnh về và mã hóa base64
         img_resp = requests.get(img_url, timeout=10)
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
@@ -198,6 +197,19 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         Hãy đọc kỹ nội dung/kịch bản sau đây:
         {script_to_critique}
         Hãy đóng vai trò người phản biện để giúp tôi nâng cấp kịch bản này lên mức xuất sắc nhất. Phân tích: Điểm mù Logic, Điểm nghẽn Cảm xúc, Nhịp điệu (Pacing) và đưa ra 3 Đề xuất sửa đổi cụ thể."""
+    elif che_do == "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)":
+        content_to_audit = st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:4000]
+        prompt = f"""Bạn là một Chuyên gia Thuật toán YouTube (YouTube Growth Hacker) nội bộ.
+        Dựa trên bộ từ khóa đang nhắm mục tiêu: {tu_khoa_list}
+        Và dữ liệu nội dung/kịch bản (hoặc mô tả) dự kiến xuất bản: 
+        {content_to_audit}
+        
+        Hãy đóng vai hệ thống AI của YouTube để "chấm điểm" và dự báo mức độ thành công của video này TRƯỚC KHI TẢI LÊN. Trình bày báo cáo rõ ràng theo 4 phần:
+        
+        1. 🎯 **Chỉ Số Đề Xuất (Algorithm Score):** Chấm điểm /100 dựa trên khả năng Viral và chuẩn SEO (Giải thích ngắn gọn lý do).
+        2. 🧲 **Dự Báo Tỷ Lệ Nhấp (CTR):** Nội dung và chủ đề này có đủ sức nặng kích thích sự tò mò không? Tiêu đề dự kiến có đang bị nhạt nhẽo không?
+        3. ⏳ **Tỷ Lệ Giữ Chân (Retention Rate):** Cấu trúc nội dung có hứa hẹn giữ chân người xem qua 30 giây đầu (Hook) tốt không? Có điểm nào dễ làm khán giả chán và thoát ra không?
+        4. 🚀 **3 Bước Tối Ưu Khẩn Cấp:** Đưa ra 3 hành động cụ thể BẮT BUỘC phải sửa (Đổi tiêu đề thành gì? Đổi góc nhìn ra sao? Thêm bớt đoạn nào?) để video dễ dàng cắn luồng Traffic đề xuất tốt nhất."""
     elif che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
         prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Đang viết kịch bản chuẩn "SILENT CAPITAL".
         Từ khóa: {tu_khoa_list}
@@ -457,7 +469,8 @@ if st.session_state.current_kw:
         "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)",
         "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)",
         "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)",
-        "🧠 Phản Biện Kịch Bản (Script Doctor)"
+        "🧠 Phản Biện Kịch Bản (Script Doctor)",
+        "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)"
     ])
     
     top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
