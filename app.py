@@ -17,7 +17,7 @@ st.set_page_config(page_title="Radar SEO & Content Pro", page_icon="🚀", layou
 st.title("🚀 Radar SEO & Content Pro (Bản All-in-One + X-Ray)")
 st.markdown("Hệ sinh thái phân tích từ khóa, tình báo đối thủ và tự động hóa sản xuất nội dung bằng Trí Tuệ Nhân Tạo.")
 
-# ================= KHỞI TẠO BỘ NHỚ TẠM (SESSION STATE) =================
+# ================= KHỞI TẠO BỘ NHỚ TẠM =================
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_kw' not in st.session_state: st.session_state.current_kw = None
 if 'current_text' not in st.session_state: st.session_state.current_text = ""
@@ -25,26 +25,21 @@ if 'current_file' not in st.session_state: st.session_state.current_file = ""
 if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
 if 'sc_memory' not in st.session_state: st.session_state.sc_memory = ""
 if 'sc_part' not in st.session_state: st.session_state.sc_part = 1
-# Lưu trữ dữ liệu X-Ray YouTube
 if 'yt_xray_data' not in st.session_state: st.session_state.yt_xray_data = None
 
-# --- CẤU HÌNH API KEY TỰ ĐỘNG TỪ SECRETS (SIDEBAR) ---
+# --- CẤU HÌNH API KEY TỰ ĐỘNG ---
 default_gemini = st.secrets.get("GEMINI_API_KEY", "") if "GEMINI_API_KEY" in st.secrets else ""
 default_yt = st.secrets.get("YOUTUBE_API_KEY", "") if "YOUTUBE_API_KEY" in st.secrets else ""
 
 st.sidebar.header("🔑 Cấu Hình API")
-gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI phân tích):", value=default_gemini, type="password")
-yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để X-Ray Đối thủ):", value=default_yt, type="password")
+gemini_api_key = st.sidebar.text_input("Gemini API Key:", value=default_gemini, type="password")
+yt_api_key = st.sidebar.text_input("YouTube API v3 Key:", value=default_yt, type="password")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 Tùy chỉnh Model AI")
-
-# TÍNH NĂNG ÉP XÓA CACHE: Đổi key để Streamlit quên đi bản 2.5 cũ, dùng bản -latest chuẩn nhất
-ai_model_choice = st.sidebar.selectbox(
-    "Danh sách Model đang hoạt động:", 
-    ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest"],
-    key="force_reset_model_key_v3"
-)
+# HIỂN THỊ RÕ RÀNG TÊN MODEL ĐỂ KIỂM SOÁT 100%
+ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash")
+st.sidebar.caption("Khuyên dùng: gemini-1.5-flash hoặc gemini-1.5-pro")
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -136,8 +131,8 @@ def ai_cham_diem_thumbnail(img_url, title):
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        model_path = f"models/{ai_model_choice}"
-        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
+        model_path = ai_model_choice.strip()
+        url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
         prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
         Hãy nhìn vào bức ảnh Thumbnail này và Tiêu đề video: "{title}". 
@@ -159,7 +154,7 @@ def ai_cham_diem_thumbnail(img_url, title):
         if res.status_code == 200:
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {ai_model_choice}."
+            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {model_path}."
     except Exception as e:
         return f"⚠️ Lỗi mạng khi xử lý ảnh: {e}"
 
@@ -169,8 +164,8 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         st.error("❌ Vui lòng dán Gemini API Key ở thanh bên trái!")
         return
 
-    model_path = f"models/{ai_model_choice}"
-    url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
+    model_path = ai_model_choice.strip()
+    url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
 
     if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)" and not is_continue:
@@ -226,7 +221,7 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    with st.spinner(f"🤖 Đang gọi Model '{ai_model_choice}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
+    with st.spinner(f"🤖 Đang gọi Model '{model_path}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
         try:
             resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
             if resp_gen.status_code == 200:
