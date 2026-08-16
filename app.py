@@ -36,30 +36,10 @@ st.sidebar.header("🔑 Cấu Hình API")
 gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI phân tích):", value=default_gemini, type="password")
 yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để X-Ray Đối thủ):", value=default_yt, type="password")
 
-# --- HÀM TỰ ĐỘNG QUÉT MODEL AI ĐANG SỐNG ---
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_gemini_models(api_key):
-    if not api_key:
-        return ["Vui lòng nhập Gemini API Key để tải danh sách"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            models = [m['name'].replace('models/', '') for m in data.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
-            return models if models else ["Không tìm thấy model nào hỗ trợ"]
-        else:
-            return [f"Lỗi truy cập danh sách: {res.status_code}"]
-    except:
-        return ["Lỗi kết nối tải danh sách"]
-
-available_models = fetch_gemini_models(gemini_api_key)
-
 st.sidebar.markdown("---")
-st.sidebar.header("🤖 Tùy chỉnh Model AI (Chống lỗi 404)")
-ai_model_choice = st.sidebar.selectbox("Danh sách Model đang hoạt động:", available_models)
-custom_model = st.sidebar.text_input("Hoặc nhập tên Model thủ công (VD: gemini-pro):")
-final_model = custom_model.strip() if custom_model.strip() else ai_model_choice
+st.sidebar.header("🤖 Tùy chỉnh Model AI (Đã Fix lỗi 404)")
+# Ép cứng danh sách các bản 1.5 ổn định nhất, tuyệt đối loại bỏ bản 2.5 lỗi
+ai_model_choice = st.sidebar.selectbox("Danh sách Model đang hoạt động:", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b"])
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -145,14 +125,13 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
 # --- HÀM AI CHẤM ĐIỂM THUMBNAIL TỪ ẢNH ---
 def ai_cham_diem_thumbnail(img_url, title):
     if not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
-    if "Lỗi" in final_model or "Vui lòng" in final_model: return "⚠️ Vui lòng chọn Model AI hợp lệ."
     
     try:
         img_resp = requests.get(img_url, timeout=10)
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        model_path = f"models/{final_model}"
+        model_path = f"models/{ai_model_choice}"
         url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
         prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
@@ -175,7 +154,7 @@ def ai_cham_diem_thumbnail(img_url, title):
         if res.status_code == 200:
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {final_model}."
+            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {ai_model_choice}."
     except Exception as e:
         return f"⚠️ Lỗi mạng khi xử lý ảnh: {e}"
 
@@ -184,12 +163,8 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
     if not gemini_api_key:
         st.error("❌ Vui lòng dán Gemini API Key ở thanh bên trái!")
         return
-        
-    if "Lỗi" in final_model or "Vui lòng" in final_model or "Không tìm thấy" in final_model:
-        st.error("❌ Model AI hiện tại không hợp lệ. Hãy đảm bảo API Key đúng và chọn một Model từ danh sách bên trái.")
-        return
 
-    model_path = f"models/{final_model}"
+    model_path = f"models/{ai_model_choice}"
     url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
 
@@ -246,7 +221,7 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    with st.spinner(f"🤖 Đang gọi Model '{final_model}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
+    with st.spinner(f"🤖 Đang gọi Model '{ai_model_choice}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
         try:
             resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
             if resp_gen.status_code == 200:
