@@ -26,7 +26,6 @@ if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
 if 'sc_memory' not in st.session_state: st.session_state.sc_memory = ""
 if 'sc_part' not in st.session_state: st.session_state.sc_part = 1
 if 'yt_xray_data' not in st.session_state: st.session_state.yt_xray_data = None
-# Bộ nhớ cho tính năng Chat
 if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 
 # --- CẤU HÌNH API KEY TỰ ĐỘNG ---
@@ -108,30 +107,6 @@ def gom_nhom(kw):
     if len(words) > 1: return words[0].capitalize()
     return "Từ Đơn"
 
-def phan_tich_cam_xuc_vn(text):
-    tich_cuc = ['tuyệt', 'hay', 'tốt', 'giỏi', 'đẹp', 'xuất sắc', 'thích', 'ok', 'ngon', 'đỉnh', 'cảm ơn']
-    tieu_cuc = ['tệ', 'chán', 'dở', 'xấu', 'lỗi', 'kém', 'lừa đảo', 'scam', 'thất vọng']
-    text_lower = text.lower()
-    score = sum(text_lower.count(w) for w in tich_cuc) - sum(text_lower.count(w) for w in tieu_cuc)
-    if score > 0: return "Tích cực 😊"
-    elif score < 0: return "Tiêu cực 😠"
-    blob_score = TextBlob(text).sentiment.polarity
-    if blob_score > 0.1: return "Tích cực 😊"
-    elif blob_score < -0.1: return "Tiêu cực 😠"
-    return "Trung lập 😐"
-
-def tao_file_excel(df):
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Tat_Ca_Tu_Khoa')
-        df.head(10).to_excel(writer, index=False, sheet_name='Top_10_Tu_Khoa')
-    buffer.seek(0)
-    return buffer
-
-def luu_lich_su(hanh_dong):
-    if hanh_dong not in st.session_state.history:
-        st.session_state.history.append(hanh_dong)
-
 def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.current_kw = res_kw
     st.session_state.current_text = full_text
@@ -157,8 +132,6 @@ def ai_cham_diem_thumbnail(img_url, title):
         2. Chữ có dễ đọc không.
         3. Sự liên kết kích thích CTR."""
         payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}]}]}
-        
-        # Nâng cấp Timeout lên 5 phút (300 giây)
         res = requests.post(url_gen, headers=headers, json=payload, timeout=300)
         if res.status_code == 200: return res.json()['candidates'][0]['content']['parts'][0]['text']
         else: return f"⚠️ Lỗi từ Google ({res.status_code})."
@@ -194,7 +167,6 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
     
     with st.spinner(f"🤖 Đang gọi Model '{model_path}' để xử lý..."):
         try:
-            # Nâng cấp Timeout lên 5 phút (300 giây)
             resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=300) 
             if resp_gen.status_code == 200:
                 try:
@@ -297,24 +269,6 @@ with tab3:
         elif uploaded_file.name.endswith('.txt'): file_text = uploaded_file.read().decode('utf-8', errors='ignore')
         luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(file_text), selected_ngram), file_text, "office_file")
 
-# ================= BÁO CÁO X-RAY =================
-if st.session_state.yt_xray_data:
-    x = st.session_state.yt_xray_data
-    st.markdown("---")
-    st.header("🕵️ BẢNG ĐIỀU KHIỂN X-RAY ĐỐI THỦ")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.image(x['v_thumb'], use_column_width=True)
-        st.markdown(f"**{x['channel_title']}** | Subs: {x.get('c_subs', 'N/A')}")
-    with col2:
-        st.subheader(x['v_title'])
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Views", f"{int(x['v_views']):,}")
-        c2.metric("Likes", f"{int(x['v_likes']):,}")
-        c3.metric("Comments", f"{int(x['v_comments']):,}")
-        st.info("Tags Ẩn: " + (", ".join(x['v_tags']) if x['v_tags'] else "Không có"))
-        st.success(f"**🤖 AI Đánh Giá Thumbnail:** {x['thumb_review']}")
-
 # ================= TỪ KHÓA & AI =================
 if st.session_state.current_kw:
     st.markdown("---")
@@ -331,12 +285,55 @@ if st.session_state.current_kw:
         st.success("✅ Trợ lý AI đã hoàn thành nhiệm vụ!")
         st.markdown(st.session_state.ai_result)
         
+        # --- KHU VỰC TỔNG HỢP VÀ XUẤT FILE TỰ ĐỘNG ---
+        st.markdown("---")
+        st.subheader("📥 Tổng Hợp & Xuất File")
+        st.caption("Tải xuống toàn bộ cuộc trò chuyện và kịch bản đã tạo để lưu trữ hoặc chỉnh sửa thêm.")
+        
+        # Hàm gom text từ lịch sử chat
+        full_export_text = "=== KẾT QUẢ TỔNG HỢP TỪ TRỢ LÝ AI ===\n\n"
+        # Bỏ qua prompt đầu tiên ẩn của hệ thống để file xuất ra sạch đẹp hơn
+        for msg in st.session_state.chat_history[1:]:
+            role = "👤 Lệnh của bạn:" if msg["role"] == "user" else "🤖 Trợ lý AI:"
+            full_export_text += f"{role}\n"
+            for part in msg["parts"]:
+                if "text" in part:
+                    full_export_text += part["text"] + "\n"
+            full_export_text += "\n" + "-"*40 + "\n\n"
+
+        if len(st.session_state.chat_history) > 0:
+            col_ex1, col_ex2 = st.columns(2)
+            
+            # Nút xuất file TXT
+            with col_ex1:
+                st.download_button(
+                    label="📄 Tải file Văn bản (.TXT)",
+                    data=full_export_text,
+                    file_name="Kich_Ban_Tong_Hop_AI.txt",
+                    mime="text/plain"
+                )
+            
+            # Nút xuất file WORD (.DOCX)
+            with col_ex2:
+                doc_export = docx.Document()
+                doc_export.add_heading('Kịch Bản Tổng Hợp AI', 0)
+                doc_export.add_paragraph(full_export_text)
+                
+                buffer_docx = io.BytesIO()
+                doc_export.save(buffer_docx)
+                buffer_docx.seek(0)
+                
+                st.download_button(
+                    label="📘 Tải file Word (.DOCX)",
+                    data=buffer_docx,
+                    file_name="Kich_Ban_Tong_Hop_AI.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+
         # --- KHU VỰC CHAT ĐÍNH KÈM TỆP ĐA NĂNG ---
         st.markdown("---")
         st.subheader("💬 Trợ Lý Tinh Chỉnh & Phân Tích Kèm Tệp")
-        st.caption("Chat với AI để gọt giũa kịch bản. Bạn có thể đính kèm Ảnh, file TXT, CSV, DOCX để AI đọc và phân tích theo yêu cầu.")
         
-        # In lại lịch sử chat (Bỏ qua prompt gốc hệ thống tạo ra ban đầu)
         for msg in st.session_state.chat_history[2:]:
             with st.chat_message("user" if msg["role"] == "user" else "assistant"):
                 for part in msg["parts"]:
@@ -346,64 +343,45 @@ if st.session_state.current_kw:
                         img_data = base64.b64decode(part["inline_data"]["data"])
                         st.image(img_data, width=300)
 
-        # Trạm tải tệp đính kèm ngay trên khung chat
-        chat_file = st.file_uploader("📎 Đính kèm tệp vào tin nhắn (Ảnh, TXT, DOCX, CSV)", type=['png', 'jpg', 'jpeg', 'txt', 'docx', 'csv'], key="chat_upload")
+        chat_file = st.file_uploader("📎 Đính kèm tệp (Ảnh, TXT, DOCX, CSV)", type=['png', 'jpg', 'jpeg', 'txt', 'docx', 'csv'], key="chat_upload")
 
-        # Khung chat chính
         if prompt_chat := st.chat_input("VD: Đánh giá bức ảnh đính kèm và viết lại đoạn mở đầu kịch bản..."):
-            
             user_parts = [{"text": prompt_chat}]
             
-            # Xử lý nếu người dùng có up tệp
             if chat_file:
                 fname = chat_file.name.lower()
-                # Nếu là ảnh -> Cho AI nhìn ảnh
                 if fname.endswith(('.png', '.jpg', '.jpeg')):
                     img_b64 = base64.b64encode(chat_file.getvalue()).decode('utf-8')
                     mime = "image/png" if fname.endswith('.png') else "image/jpeg"
                     user_parts.append({"inline_data": {"mime_type": mime, "data": img_b64}})
-                # Nếu là file Text/Word/CSV -> Ép AI đọc toàn bộ chữ
                 elif fname.endswith('.txt'):
-                    text_content = chat_file.getvalue().decode('utf-8', errors='ignore')
-                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM]:\n{chat_file.getvalue().decode('utf-8', errors='ignore')}"
                 elif fname.endswith('.csv'):
-                    df_chat = pd.read_csv(chat_file)
-                    text_content = ' '.join(df_chat.astype(str).values.flatten())
-                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM]:\n{' '.join(pd.read_csv(chat_file).astype(str).values.flatten())}"
                 elif fname.endswith('.docx'):
-                    doc_chat = docx.Document(chat_file)
-                    text_content = ' '.join([p.text for p in doc_chat.paragraphs])
-                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM]:\n{' '.join([p.text for p in docx.Document(chat_file).paragraphs])}"
             
-            # In ra màn hình tin nhắn của người dùng
             with st.chat_message("user"):
                 st.markdown(prompt_chat)
                 if chat_file:
-                    if chat_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        st.image(chat_file.getvalue(), width=300)
-                    else:
-                        st.info(f"📄 Đã đính kèm tệp: {chat_file.name}")
+                    if chat_file.name.lower().endswith(('.png', '.jpg', '.jpeg')): st.image(chat_file.getvalue(), width=300)
+                    else: st.info(f"📄 Tệp: {chat_file.name}")
             
-            # Lưu lại vào lịch sử trò chuyện
             st.session_state.chat_history.append({"role": "user", "parts": user_parts})
             
-            # Đóng gói và Gửi yêu cầu sang Google
             model_path = ai_model_choice.strip().replace("models/", "")
             url_chat = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
             headers_chat = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
             payload_chat = {"contents": st.session_state.chat_history}
             
-            # Chờ AI trả lời
             with st.chat_message("assistant"):
-                with st.spinner("🤖 Đang phân tích dữ liệu đính kèm và xử lý yêu cầu..."):
+                with st.spinner("🤖 Đang phân tích..."):
                     try:
-                        # Nâng cấp Timeout lên 5 phút (300 giây)
                         res_chat = requests.post(url_chat, headers=headers_chat, json=payload_chat, timeout=300)
                         if res_chat.status_code == 200:
                             reply = res_chat.json()['candidates'][0]['content']['parts'][0]['text']
                             st.markdown(reply)
                             st.session_state.chat_history.append({"role": "model", "parts": [{"text": reply}]})
-                        else:
-                            st.error(f"Lỗi API: {res_chat.text}")
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
+                            st.rerun() # Tự động làm mới trang để cập nhật nút tải file
+                        else: st.error(f"Lỗi API: {res_chat.text}")
+                    except Exception as e: st.error(f"Lỗi: {e}")
