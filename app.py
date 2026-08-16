@@ -234,18 +234,23 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         try:
             resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
             if resp_gen.status_code == 200:
-                new_content = resp_gen.json()['candidates'][0]['content']['parts'][0]['text']
-                if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
-                    st.session_state.sc_memory += f"\n\n{new_content}"
-                    st.session_state.ai_result = st.session_state.sc_memory
-                    st.session_state.sc_part += 1
-                else:
-                    st.session_state.ai_result = new_content
-                st.rerun()
+                try:
+                    new_content = resp_gen.json()['candidates'][0]['content']['parts'][0]['text']
+                    if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
+                        st.session_state.sc_memory += f"\n\n{new_content}"
+                        st.session_state.ai_result = st.session_state.sc_memory
+                        st.session_state.sc_part += 1
+                    else:
+                        st.session_state.ai_result = new_content
+                    st.rerun()
+                except KeyError:
+                    # Bắt lỗi Safety Filter
+                    st.error(f"❌ Nội dung đầu vào chứa từ ngữ nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
             else:
-                st.error("❌ Máy chủ Google đang quá tải hoặc từ chối xử lý, vui lòng thử lại.")
+                # Bắt lỗi HTTP (429, 403, 500)
+                st.error(f"❌ API Google báo lỗi (Mã {resp_gen.status_code}): {resp_gen.text}")
         except Exception as e:
-            st.error(f"Lỗi kết nối AI: {e}")
+            st.error(f"Lỗi kết nối mạng hoặc quá hạn chờ: {e}")
 
 
 # ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
