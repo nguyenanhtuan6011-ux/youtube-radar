@@ -36,6 +36,9 @@ st.sidebar.header("🔑 Cấu Hình API")
 gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI phân tích):", value=default_gemini, type="password")
 yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để X-Ray Đối thủ):", value=default_yt, type="password")
 
+# TÍNH NĂNG MỚI: CHỌN CỨNG MODEL TRÁNH LỖI 404
+ai_model_choice = st.sidebar.selectbox("🤖 Chọn Model AI (Khuyên dùng 1.5):", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"])
+
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
 
@@ -117,42 +120,18 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.sc_part = 1
     st.session_state.yt_xray_data = None
 
-# --- HÀM LẤY API MODEL GEMINI (ĐÃ ĐƯỢC TỐI ƯU HÓA) ---
-def get_gemini_model():
-    if not gemini_api_key: return None
-    url_list = "https://generativelanguage.googleapis.com/v1beta/models"
-    headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
-    try:
-        res = requests.get(url_list, headers=headers, timeout=5)
-        if res.status_code == 200:
-            models = [m['name'] for m in res.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', []) and 'gemini' in m['name']]
-            
-            # Ưu tiên lấy bản 1.5-flash siêu ổn định
-            for m in models:
-                if "1.5-flash" in m and "8b" not in m:
-                    return m
-                    
-            # Nếu không tìm thấy, lấy các bản khác nhưng BẮT BUỘC bỏ qua bản 2.5-flash đang lỗi
-            for m in models:
-                if "2.5-flash" not in m:
-                    return m
-                    
-            return models[0] if models else None
-    except:
-        return None
-    return None
-
 # --- HÀM AI CHẤM ĐIỂM THUMBNAIL TỪ ẢNH ---
 def ai_cham_diem_thumbnail(img_url, title):
-    model = get_gemini_model()
-    if not model or not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
+    if not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
     
     try:
         img_resp = requests.get(img_url, timeout=10)
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
+        # Gắn cứng model do người dùng chọn ở thanh bên
+        model_path = f"models/{ai_model_choice}"
+        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
         prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
         Hãy nhìn vào bức ảnh Thumbnail này và Tiêu đề video: "{title}". 
@@ -180,12 +159,13 @@ def ai_cham_diem_thumbnail(img_url, title):
 
 # --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
-    model = get_gemini_model()
-    if not model:
+    if not gemini_api_key:
         st.error("❌ Vui lòng kiểm tra lại Gemini API Key!")
         return
         
-    url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
+    # Gắn cứng model do người dùng chọn ở thanh bên
+    model_path = f"models/{ai_model_choice}"
+    url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
 
     if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)" and not is_continue:
