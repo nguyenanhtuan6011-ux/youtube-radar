@@ -37,9 +37,9 @@ yt_api_key = st.sidebar.text_input("YouTube API v3 Key:", value=default_yt, type
 
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 Tùy chỉnh Model AI")
-# HIỂN THỊ RÕ RÀNG TÊN MODEL ĐỂ KIỂM SOÁT 100%
-ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash")
-st.sidebar.caption("Khuyên dùng: gemini-1.5-flash hoặc gemini-1.5-pro")
+# HIỂN THỊ RÕ RÀNG TÊN MODEL, MẶC ĐỊNH DÙNG BẢN LATEST ĐỂ TRÁNH 404
+ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash-latest")
+st.sidebar.caption("Gợi ý an toàn: gemini-1.5-flash-latest, gemini-1.5-pro-latest, gemini-2.0-flash-exp")
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -131,7 +131,8 @@ def ai_cham_diem_thumbnail(img_url, title):
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        model_path = ai_model_choice.strip()
+        # BỘ LỌC KÉP: Loại bỏ chữ "models/" nếu người dùng lỡ tay dán vào
+        model_path = ai_model_choice.strip().replace("models/", "")
         url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
         prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
@@ -164,7 +165,8 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         st.error("❌ Vui lòng dán Gemini API Key ở thanh bên trái!")
         return
 
-    model_path = ai_model_choice.strip()
+    # BỘ LỌC KÉP: Tránh lỗi double prefix (models/models/...)
+    model_path = ai_model_choice.strip().replace("models/", "")
     url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
 
