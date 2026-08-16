@@ -26,6 +26,8 @@ if 'ai_result' not in st.session_state: st.session_state.ai_result = ""
 if 'sc_memory' not in st.session_state: st.session_state.sc_memory = ""
 if 'sc_part' not in st.session_state: st.session_state.sc_part = 1
 if 'yt_xray_data' not in st.session_state: st.session_state.yt_xray_data = None
+# Bộ nhớ cho tính năng Chat
+if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 
 # --- CẤU HÌNH API KEY TỰ ĐỘNG ---
 default_gemini = st.secrets.get("GEMINI_API_KEY", "") if "GEMINI_API_KEY" in st.secrets else ""
@@ -38,7 +40,6 @@ yt_api_key = st.sidebar.text_input("YouTube API v3 Key:", value=default_yt, type
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 Tùy chỉnh Model AI")
 
-# TÍNH NĂNG MỚI: QUÉT DANH SÁCH MODEL TỪ GOOGLE
 if st.sidebar.button("🔍 Quét Model Khả Dụng"):
     if not gemini_api_key:
         st.sidebar.error("Vui lòng nhập API Key trước!")
@@ -57,9 +58,7 @@ if st.sidebar.button("🔍 Quét Model Khả Dụng"):
             except Exception as e:
                 st.sidebar.error(f"Lỗi kết nối: {e}")
 
-# Mặc định đổi sang bản có đánh số -001 để đảm bảo tỷ lệ sống 100%
-ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash-001")
-st.sidebar.caption("Gợi ý an toàn: gemini-1.5-flash-001, gemini-1.5-flash-002, gemini-1.5-pro-001")
+ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash")
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -141,42 +140,30 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.sc_memory = ""
     st.session_state.sc_part = 1
     st.session_state.yt_xray_data = None
+    st.session_state.chat_history = []
 
 # --- HÀM AI CHẤM ĐIỂM THUMBNAIL TỪ ẢNH ---
 def ai_cham_diem_thumbnail(img_url, title):
     if not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
-    
     try:
         img_resp = requests.get(img_url, timeout=10)
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
-        
         model_path = ai_model_choice.strip().replace("models/", "")
         url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
-        prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
-        Hãy nhìn vào bức ảnh Thumbnail này và Tiêu đề video: "{title}". 
-        Hãy chấm điểm (trên thang 10) và đánh giá ngắn gọn theo 3 tiêu chí:
-        1. 🎨 **Độ nổi bật (Màu sắc & Bố cục):** Ảnh có nổi bật trên nền giao diện tối (Dark mode) không?
-        2. ✍️ **Chữ (Text on Image):** Chữ có dễ đọc trên màn hình điện thoại nhỏ không? Thông điệp có khơi gợi sự tò mò không?
-        3. 💡 **Sự liên kết (Tiêu đề & Ảnh):** Ảnh và tiêu đề có bổ trợ cho nhau để tạo ra tỷ lệ click (CTR) cao không? Đề xuất 1 cách cải thiện."""
+        prompt = f"""Bạn là chuyên gia Marketing và Thiết kế YouTube. Nhìn bức ảnh Thumbnail này và Tiêu đề: "{title}". Hãy chấm điểm (/10) và đánh giá:
+        1. Độ nổi bật (Màu sắc & Bố cục).
+        2. Chữ có dễ đọc không.
+        3. Sự liên kết kích thích CTR."""
+        payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}]}]}
         
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
-                ]
-            }]
-        }
-        
-        res = requests.post(url_gen, headers=headers, json=payload, timeout=60)
-        if res.status_code == 200:
-            return res.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {model_path}."
+        # Nâng cấp Timeout lên 5 phút (300 giây)
+        res = requests.post(url_gen, headers=headers, json=payload, timeout=300)
+        if res.status_code == 200: return res.json()['candidates'][0]['content']['parts'][0]['text']
+        else: return f"⚠️ Lỗi từ Google ({res.status_code})."
     except Exception as e:
-        return f"⚠️ Lỗi mạng khi xử lý ảnh: {e}"
+        return f"⚠️ Lỗi mạng: {e}"
 
 # --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
@@ -192,61 +179,33 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         st.session_state.sc_memory = ""
         st.session_state.sc_part = 1
 
-    if che_do == "📝 Lập Dàn Ý SEO (Outline)":
-        prompt = f"Bạn là chuyên gia SEO. Dựa vào Top từ khóa: {tu_khoa_list}. Hãy đề xuất 3 Tiêu đề hấp dẫn và lập Dàn ý (H2, H3) chi tiết chuẩn SEO."
-    elif che_do == "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)":
-        prompt = f"Bạn là một Copywriter chuyên nghiệp. Dựa vào bộ từ khóa: {tu_khoa_list}. Hãy viết một bài Blog chuẩn SEO hoàn chỉnh, dài khoảng 1000 từ. Bố cục rõ ràng, lồng ghép từ khóa một cách tự nhiên nhất."
-    elif che_do == "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)":
-        prompt = f"Bạn là chuyên gia sáng tạo nội dung Video ngắn. Từ các từ khóa xu hướng này: {tu_khoa_list}. Hãy viết kịch bản Video dọc (dưới 60 giây). Bao gồm: 1. Hook, 2. Body, 3. CTA. Có text chạy trên màn hình."
-    elif che_do == "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)":
-        prompt = f"Bạn là chuyên gia chốt sale TMĐT. Dựa vào danh sách từ khóa: {tu_khoa_list}. Hãy viết: 1. 3 Tiêu đề Sản phẩm giật tít. 2. Đoạn Mô tả sản phẩm đánh mạnh vào nỗi đau khách hàng, lồng ghép từ khóa."
-    elif che_do == "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)":
-        prompt = f"Dữ liệu trích xuất từ Video YouTube của đối thủ: \n\n{text_goc[:5000]}\n\nBạn là YouTuber chuyên nghiệp. Hãy viết ra một Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ và HẤP DẪN HƠN cho kênh của tôi."
-    elif che_do == "🧠 Phản Biện Kịch Bản (Script Doctor)":
-        script_to_critique = st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:3000]
-        prompt = f"""Bạn là một Đạo diễn và Cố vấn Kịch bản (Script Doctor) cực kỳ khắt khe. 
-        Hãy đọc kỹ nội dung/kịch bản sau đây:
-        {script_to_critique}
-        Hãy đóng vai trò người phản biện để giúp tôi nâng cấp kịch bản này lên mức xuất sắc nhất. Phân tích: Điểm mù Logic, Điểm nghẽn Cảm xúc, Nhịp điệu (Pacing) và đưa ra 3 Đề xuất sửa đổi cụ thể."""
-    elif che_do == "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)":
-        content_to_audit = st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:4000]
-        prompt = f"""Bạn là một Chuyên gia Thuật toán YouTube (YouTube Growth Hacker) nội bộ.
-        Dựa trên bộ từ khóa đang nhắm mục tiêu: {tu_khoa_list}
-        Và dữ liệu nội dung/kịch bản (hoặc mô tả) dự kiến xuất bản: 
-        {content_to_audit}
-        
-        Hãy đóng vai hệ thống AI của YouTube để "chấm điểm" và dự báo mức độ thành công của video này TRƯỚC KHI TẢI LÊN. Trình bày báo cáo rõ ràng theo 4 phần:
-        
-        1. 🎯 **Chỉ Số Đề Xuất (Algorithm Score):** Chấm điểm /100 dựa trên khả năng Viral và chuẩn SEO.
-        2. 🧲 **Dự Báo Tỷ Lệ Nhấp (CTR):** Nội dung và chủ đề này có đủ sức nặng kích thích sự tò mò không?
-        3. ⏳ **Tỷ Lệ Giữ Chân (Retention Rate):** Cấu trúc nội dung có hứa hẹn giữ chân người xem qua 30 giây đầu (Hook) tốt không?
-        4. 🚀 **3 Bước Tối Ưu Khẩn Cấp:** Đưa ra 3 hành động cụ thể BẮT BUỘC phải sửa để video dễ dàng cắn luồng Traffic đề xuất tốt nhất."""
+    if che_do == "📝 Lập Dàn Ý SEO (Outline)": prompt = f"Chuyên gia SEO. Dựa vào Top từ khóa: {tu_khoa_list}. Hãy lập Dàn ý chi tiết chuẩn SEO."
+    elif che_do == "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)": prompt = f"Viết bài Blog chuẩn SEO dài khoảng 1000 từ dựa vào bộ từ khóa: {tu_khoa_list}."
+    elif che_do == "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)": prompt = f"Viết kịch bản Video dọc (dưới 60s) từ từ khóa: {tu_khoa_list}. Cấu trúc: Hook, Body, CTA."
+    elif che_do == "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)": prompt = f"Viết 3 Tiêu đề giật tít và Mô tả sản phẩm đánh vào nỗi đau khách hàng từ từ khóa: {tu_khoa_list}."
+    elif che_do == "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)": prompt = f"Dữ liệu từ YouTube đối thủ: {text_goc[:5000]}. Viết Kịch Bản Video YouTube hoàn chỉnh, MỚI MẺ HƠN."
+    elif che_do == "🧠 Phản Biện Kịch Bản (Script Doctor)": prompt = f"Đóng vai người phản biện khắt khe nội dung sau: {st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:3000]}. Chỉ ra điểm mù logic, nhịp điệu và 3 đề xuất."
+    elif che_do == "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)": prompt = f"Chuyên gia Thuật toán. Chấm điểm kịch bản dự kiến: {st.session_state.sc_memory if st.session_state.sc_memory else text_goc[:4000]}. Dự báo CTR, Retention và 3 bước tối ưu khẩn."
     elif che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
-        prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Đang viết kịch bản chuẩn "SILENT CAPITAL".
-        Từ khóa: {tu_khoa_list}
-        Kịch bản cũ đã viết (KHÔNG VIẾT LẠI CHÚNG): {st.session_state.sc_memory}
-        
-        HÃY VIẾT DUY NHẤT PART {st.session_state.sc_part}. (Khoảng 80-95 từ tiếng Anh, thiết kế đọc trong 30-35 giây).
-        Cấu trúc BẮT BUỘC:
-        [PART {st.session_state.sc_part} - TÊN PART IN HOA]
-        English word count: ...
-        VOICE SCRIPT
-        [Tiếng Anh - Ngắt dòng từng câu ngắn]
-        VIETNAMESE TRANSLATION
-        [Tiếng Việt - Ngắt dòng tương ứng]
-        KEY MESSAGE
-        [1 câu tóm tắt Anh-Việt]
-        PRODUCTION NOTE
-        [Hướng dẫn góc máy, ánh sáng, Master Style: Flat 2D stickman, cinematic lighting]"""
+        prompt = f"""Biên kịch Phim tài liệu. Viết DUY NHẤT PART {st.session_state.sc_part} nối tiếp Kịch bản: {st.session_state.sc_memory}.
+        Cấu trúc BẮT BUỘC: [PART {st.session_state.sc_part}], VOICE SCRIPT, VIETNAMESE TRANSLATION, KEY MESSAGE, PRODUCTION NOTE."""
 
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
     
-    with st.spinner(f"🤖 Đang gọi Model '{model_path}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
+    with st.spinner(f"🤖 Đang gọi Model '{model_path}' để xử lý..."):
         try:
-            resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
+            # Nâng cấp Timeout lên 5 phút (300 giây)
+            resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=300) 
             if resp_gen.status_code == 200:
                 try:
                     new_content = resp_gen.json()['candidates'][0]['content']['parts'][0]['text']
+                    
+                    # Lưu vào hệ thống Chat để tương tác tiếp
+                    st.session_state.chat_history = [
+                        {"role": "user", "parts": [{"text": prompt}]},
+                        {"role": "model", "parts": [{"text": new_content}]}
+                    ]
+
                     if che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
                         st.session_state.sc_memory += f"\n\n{new_content}"
                         st.session_state.ai_result = st.session_state.sc_memory
@@ -254,28 +213,22 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
                     else:
                         st.session_state.ai_result = new_content
                     st.rerun()
-                except KeyError:
-                    st.error(f"❌ Nội dung nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
-            else:
-                st.error(f"❌ Lỗi từ Google API (Mã {resp_gen.status_code}). Nguyên nhân: {resp_gen.text}")
-        except Exception as e:
-            st.error(f"Lỗi kết nối mạng hoặc quá hạn chờ: {e}")
+                except KeyError: st.error(f"❌ Nội dung nhạy cảm bị chặn. Chi tiết: {resp_gen.text}")
+            else: st.error(f"❌ Lỗi từ Google API (Mã {resp_gen.status_code}): {resp_gen.text}")
+        except Exception as e: st.error(f"Lỗi kết nối mạng: {e}")
 
-
-# ================= GIAO DIỆN NHẬP LIỆU (TABS) =================
+# ================= GIAO DIỆN NHẬP LIỆU =================
 tab1, tab2, tab3 = st.tabs(["📺 YouTube & Gợi Ý", "🌐 Phân Tích & So Sánh URL", "📁 Tệp Office"])
 
 with tab1:
     che_do_yt = st.radio("Chọn chế độ phân tích:", ("🌍 Gợi ý tìm kiếm Đa quốc gia", "🔗 Bóc tách từ Link Kênh/Video (X-Ray Đối thủ)"))
     st.markdown("---")
-    
     if che_do_yt == "🌍 Gợi ý tìm kiếm Đa quốc gia":
         col_opt1, col_opt2 = st.columns(2)
         with col_opt1: nguon_gợi_ý = st.selectbox("Chọn nền tảng:", ("YouTube", "Google Search"))
-        with col_opt2: quoc_gia = st.selectbox("🌍 Chọn thị trường:", ("Việt Nam (VN)", "Mỹ (US)", "Anh (UK)", "Đức (DE)", "Pháp (FR)", "Toàn cầu"))
-        
-        tu_khoa_nhap = st.text_input("🔑 Nhập từ khóa gốc:", key="kw_search")
-        market_map = {"Việt Nam (VN)": {"gl": "vn", "hl": "vi"}, "Mỹ (US)": {"gl": "us", "hl": "en"}, "Anh (UK)": {"gl": "gb", "hl": "en"}, "Đức (DE)": {"gl": "de", "hl": "de"}, "Pháp (FR)": {"gl": "fr", "hl": "fr"}, "Toàn cầu": {"gl": "", "hl": "en"}}
+        with col_opt2: quoc_gia = st.selectbox("🌍 Chọn thị trường:", ("Việt Nam (VN)", "Mỹ (US)", "Anh (UK)", "Toàn cầu"))
+        tu_khoa_nhap = st.text_input("🔑 Nhập từ khóa gốc:")
+        market_map = {"Việt Nam (VN)": {"gl": "vn", "hl": "vi"}, "Mỹ (US)": {"gl": "us", "hl": "en"}, "Anh (UK)": {"gl": "gb", "hl": "en"}, "Toàn cầu": {"gl": "", "hl": "en"}}
         
         if st.button("🚀 Quét Từ Khóa"):
             if tu_khoa_nhap:
@@ -284,224 +237,173 @@ with tab1:
                 tat_ca_suggests = []
                 bar = st.progress(0)
                 client_type = "yt" if nguon_gợi_ý == "YouTube" else "chrome"
-                
                 for i, q in enumerate(danh_sach_truy_van):
-                    url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds={client_type}&q={q}&hl={hl}&gl={gl}" if nguon_gợi_ý == "YouTube" else f"https://suggestqueries.google.com/complete/search?client=firefox&q={q}&hl={hl}&gl={gl}"
                     try:
+                        url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds={client_type}&q={q}&hl={hl}&gl={gl}" if nguon_gợi_ý == "YouTube" else f"https://suggestqueries.google.com/complete/search?client=firefox&q={q}&hl={hl}&gl={gl}"
                         res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
                         if res.status_code == 200: tat_ca_suggests.extend(res.json()[1])
                     except: pass
                     bar.progress((i + 1) / len(danh_sach_truy_van))
                     time.sleep(0.05)
-                
                 bar.empty()
                 full_text = ' '.join(tat_ca_suggests)
                 res_kw = trich_xuat_tu_khoa(lam_sach_text(full_text), selected_ngram)
-                luu_lich_su(f"Quét {nguon_gợi_ý} ({quoc_gia})")
                 luu_ket_qua_vao_bo_nho(res_kw, full_text, f"{nguon_gợi_ý}_{market_map[quoc_gia]['gl']}")
-            else:
-                st.warning("Vui lòng nhập từ khóa!")
+            else: st.warning("Vui lòng nhập từ khóa!")
                 
     else:
-        link_yt = st.text_input("🔗 Nhập link Video YouTube (Để kích hoạt X-Ray, cần có YouTube API Key):")
-        quet_comment = st.checkbox("💬 Quét luôn cả bình luận (Gom nhặt nỗi đau khách hàng)", value=True)
-        
+        link_yt = st.text_input("🔗 Nhập link Video YouTube:")
+        quet_comment = st.checkbox("💬 Quét luôn cả bình luận", value=True)
         if st.button("🚀 Phân Tích & X-Ray Đối Thủ"):
-            if not link_yt:
-                st.warning("Vui lòng nhập đường link Video!")
-            elif not yt_api_key:
-                st.error("⚠️ Bạn cần nhập YouTube Data API v3 Key ở cột bên trái để sử dụng tính năng X-Ray nâng cao!")
+            if not link_yt: st.warning("Vui lòng nhập đường link Video!")
+            elif not yt_api_key: st.error("⚠️ Cần nhập YouTube API v3 Key!")
             else:
-                with st.spinner("🕵️ Đang bóc tách toàn bộ dữ liệu tình báo của đối thủ..."):
+                with st.spinner("🕵️ Đang bóc tách dữ liệu..."):
                     try:
-                        video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', link_yt)
-                        if not video_id_match:
-                            st.error("Link Video không hợp lệ.")
-                        else:
-                            vid_id = video_id_match.group(1)
-                            full_content = ""
-                            xray = {}
-                            
-                            # 1. LẤY DATA VIDEO (X-Ray Video)
-                            vid_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id={vid_id}&key={yt_api_key}"
-                            vid_res = requests.get(vid_url).json()
-                            if 'items' in vid_res and len(vid_res['items']) > 0:
-                                v_data = vid_res['items'][0]
-                                xray['v_title'] = v_data['snippet']['title']
-                                xray['v_desc'] = v_data['snippet']['description']
-                                xray['v_tags'] = v_data['snippet'].get('tags', [])
-                                xray['v_views'] = v_data['statistics'].get('viewCount', '0')
-                                xray['v_likes'] = v_data['statistics'].get('likeCount', '0')
-                                xray['v_comments'] = v_data['statistics'].get('commentCount', '0')
-                                xray['channel_id'] = v_data['snippet']['channelId']
-                                xray['channel_title'] = v_data['snippet']['channelTitle']
-                                
-                                # Tìm Thumbnail nét nhất
-                                thumbs = v_data['snippet']['thumbnails']
-                                if 'maxres' in thumbs: xray['v_thumb'] = thumbs['maxres']['url']
-                                elif 'high' in thumbs: xray['v_thumb'] = thumbs['high']['url']
-                                else: xray['v_thumb'] = thumbs['default']['url']
-                                
-                                full_content += f"{xray['v_title']} {xray['v_desc']} " + " ".join(xray['v_tags'])
-                                
-                                # 2. LẤY DATA KÊNH (Trinh sát kênh)
-                                ch_url = f"https://www.googleapis.com/youtube/v3/channels?part=statistics&id={xray['channel_id']}&key={yt_api_key}"
-                                ch_res = requests.get(ch_url).json()
-                                if 'items' in ch_res:
-                                    xray['c_subs'] = ch_res['items'][0]['statistics'].get('subscriberCount', 'Ẩn')
-                                    xray['c_views'] = ch_res['items'][0]['statistics'].get('viewCount', '0')
-                                    xray['c_videos'] = ch_res['items'][0]['statistics'].get('videoCount', '0')
-                                
-                                # 3. LẤY TOP 5 VIDEO CỦA KÊNH
-                                search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={xray['channel_id']}&maxResults=5&order=viewCount&type=video&key={yt_api_key}"
-                                search_res = requests.get(search_url).json()
-                                xray['top_videos'] = []
-                                if 'items' in search_res:
-                                    for item in search_res['items']:
-                                        xray['top_videos'].append({
-                                            'title': item['snippet']['title'],
-                                            'vid_id': item['id']['videoId']
-                                        })
-
-                            # 4. QUÉT COMMENT (Nếu chọn)
-                            if quet_comment:
-                                cmt_url = f"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={vid_id}&maxResults=100&key={yt_api_key}"
-                                cmt_res = requests.get(cmt_url).json()
-                                if 'items' in cmt_res:
-                                    for item in cmt_res['items']: 
-                                        full_content += " " + item['snippet']['topLevelComment']['snippet']['textOriginal']
-                            
-                            # 5. CHẤM ĐIỂM THUMBNAIL (AI)
-                            st.session_state.yt_xray_data = xray
-                            st.session_state.yt_xray_data['thumb_review'] = ai_cham_diem_thumbnail(xray['v_thumb'], xray['v_title'])
-
-                            # Trích xuất từ khóa
-                            words = lam_sach_text(full_content)
-                            res_kw = trich_xuat_tu_khoa(words, selected_ngram)
-                            luu_lich_su(f"X-Ray YouTube")
-                            luu_ket_qua_vao_bo_nho(res_kw, full_content, "youtube_xray_data")
-
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
+                        vid_id = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', link_yt).group(1)
+                        full_content, xray = "", {}
+                        vid_res = requests.get(f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id={vid_id}&key={yt_api_key}").json()
+                        if 'items' in vid_res and len(vid_res['items']) > 0:
+                            v = vid_res['items'][0]
+                            xray.update({'v_title': v['snippet']['title'], 'v_desc': v['snippet']['description'], 'v_tags': v['snippet'].get('tags', []), 'v_views': v['statistics'].get('viewCount', '0'), 'v_likes': v['statistics'].get('likeCount', '0'), 'v_comments': v['statistics'].get('commentCount', '0'), 'channel_id': v['snippet']['channelId'], 'channel_title': v['snippet']['channelTitle']})
+                            thumbs = v['snippet']['thumbnails']
+                            xray['v_thumb'] = thumbs.get('maxres', thumbs.get('high', thumbs.get('default')))['url']
+                            full_content += f"{xray['v_title']} {xray['v_desc']} " + " ".join(xray['v_tags'])
+                            ch_res = requests.get(f"https://www.googleapis.com/youtube/v3/channels?part=statistics&id={xray['channel_id']}&key={yt_api_key}").json()
+                            if 'items' in ch_res:
+                                xray.update({'c_subs': ch_res['items'][0]['statistics'].get('subscriberCount', 'Ẩn'), 'c_views': ch_res['items'][0]['statistics'].get('viewCount', '0'), 'c_videos': ch_res['items'][0]['statistics'].get('videoCount', '0')})
+                        if quet_comment:
+                            cmt_res = requests.get(f"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={vid_id}&maxResults=100&key={yt_api_key}").json()
+                            if 'items' in cmt_res: full_content += " " + " ".join([i['snippet']['topLevelComment']['snippet']['textOriginal'] for i in cmt_res['items']])
+                        xray['thumb_review'] = ai_cham_diem_thumbnail(xray['v_thumb'], xray['v_title'])
+                        st.session_state.yt_xray_data = xray
+                        luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(full_content), selected_ngram), full_content, "youtube_xray_data")
+                    except Exception as e: st.error(f"Lỗi: {e}")
 
 with tab2:
-    che_do_web = st.radio("Chế độ:", ("Phân tích 1 Website", "So sánh 2 Đối thủ (A vs B)"))
-    url1 = st.text_input("🔗 Nhập URL trang 1:")
-    url2 = st.text_input("🔗 Nhập URL trang 2 (đối thủ):") if che_do_web == "So sánh 2 Đối thủ (A vs B)" else None
-    
-    def lay_chu_web(url):
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+    url1 = st.text_input("🔗 Nhập URL trang web:")
+    if st.button("🚀 Phân Tích URL") and url1:
+        res = requests.get(url1, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
         for script in soup(["script", "style"]): script.decompose()
-        return ' '.join([tag.get_text() for tag in soup.find_all(['p', 'h1', 'h2', 'article'])])
-
-    if st.button("🚀 Phân Tích URL"):
-        if che_do_web == "Phân tích 1 Website" and url1:
-            text1 = lay_chu_web(url1)
-            luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(text1), selected_ngram), text1, "Web_Keywords")
+        text1 = ' '.join([tag.get_text() for tag in soup.find_all(['p', 'h1', 'h2', 'article'])])
+        luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(text1), selected_ngram), text1, "Web_Keywords")
 
 with tab3:
     uploaded_file = st.file_uploader("Chọn file (xlsx, csv, docx, txt):", type=['xlsx', 'csv', 'docx', 'txt'])
     if st.button("🚀 Phân Tích Tệp Office") and uploaded_file:
-        file_text, file_name = "", uploaded_file.name
-        if file_name.endswith('.csv'): file_text = ' '.join(pd.read_csv(uploaded_file).astype(str).values.flatten())
-        elif file_name.endswith('.xlsx'): file_text = ' '.join(pd.read_excel(uploaded_file).astype(str).values.flatten())
-        elif file_name.endswith('.docx'): file_text = ' '.join([p.text for p in docx.Document(uploaded_file).paragraphs])
-        elif file_name.endswith('.txt'): file_text = uploaded_file.read().decode('utf-8', errors='ignore')
-        luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(file_text), selected_ngram), file_text, f"office_{file_name}")
+        file_text = ""
+        if uploaded_file.name.endswith('.csv'): file_text = ' '.join(pd.read_csv(uploaded_file).astype(str).values.flatten())
+        elif uploaded_file.name.endswith('.txt'): file_text = uploaded_file.read().decode('utf-8', errors='ignore')
+        luu_ket_qua_vao_bo_nho(trich_xuat_tu_khoa(lam_sach_text(file_text), selected_ngram), file_text, "office_file")
 
-# ================= GIAO DIỆN BÁO CÁO X-RAY =================
+# ================= BÁO CÁO X-RAY =================
 if st.session_state.yt_xray_data:
-    xdata = st.session_state.yt_xray_data
+    x = st.session_state.yt_xray_data
     st.markdown("---")
     st.header("🕵️ BẢNG ĐIỀU KHIỂN X-RAY ĐỐI THỦ")
-    
-    col_v1, col_v2 = st.columns([1, 2])
-    with col_v1:
-        st.image(xdata['v_thumb'], use_column_width=True, caption="Thumbnail Thực Tế")
-        st.markdown(f"**Tên Kênh:** {xdata['channel_title']}")
-        st.markdown(f"👥 **Subscribers:** {xdata.get('c_subs', 'N/A')}")
-        st.markdown(f"🎬 **Tổng Video Kênh:** {xdata.get('c_videos', 'N/A')}")
-        st.markdown(f"👁️ **Tổng View Kênh:** {xdata.get('c_views', 'N/A')}")
-    
-    with col_v2:
-        st.subheader(xdata['v_title'])
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.image(x['v_thumb'], use_column_width=True)
+        st.markdown(f"**{x['channel_title']}** | Subs: {x.get('c_subs', 'N/A')}")
+    with col2:
+        st.subheader(x['v_title'])
         c1, c2, c3 = st.columns(3)
-        c1.metric("Lượt Xem (Views)", f"{int(xdata['v_views']):,}")
-        c2.metric("Lượt Thích (Likes)", f"{int(xdata['v_likes']):,}")
-        c3.metric("Bình luận (Comments)", f"{int(xdata['v_comments']):,}")
-        
-        st.markdown("**🏷️ Thẻ Tags Bị Ẩn (Bí mật kéo view):**")
-        st.info(", ".join(xdata['v_tags']) if xdata['v_tags'] else "Video này không dùng thẻ tag ẩn.")
-        
-        st.markdown("**🤖 AI Đánh Giá Ảnh Bìa (Thumbnail Audit):**")
-        st.success(xdata['thumb_review'])
+        c1.metric("Views", f"{int(x['v_views']):,}")
+        c2.metric("Likes", f"{int(x['v_likes']):,}")
+        c3.metric("Comments", f"{int(x['v_comments']):,}")
+        st.info("Tags Ẩn: " + (", ".join(x['v_tags']) if x['v_tags'] else "Không có"))
+        st.success(f"**🤖 AI Đánh Giá Thumbnail:** {x['thumb_review']}")
 
-    with st.expander("🔥 Tình Báo Kênh: Top 5 Video Nhiều View Nhất Kênh Này", expanded=False):
-        for i, vid in enumerate(xdata['top_videos']):
-            st.markdown(f"{i+1}. [{vid['title']}](https://www.youtube.com/watch?v={vid['vid_id']})")
-
-
-# ================= GIAO DIỆN HIỂN THỊ TỪ KHÓA & AI =================
+# ================= TỪ KHÓA & AI =================
 if st.session_state.current_kw:
     st.markdown("---")
-    st.subheader(f"🔑 Khai Thác Từ Khóa & Nỗi Đau Khách Hàng")
-    
-    df = pd.DataFrame(st.session_state.current_kw, columns=['Từ khóa / Cụm từ', 'Tần suất'])
-    df['Ý định tìm kiếm (Intent)'] = df['Từ khóa / Cụm từ'].apply(phan_loai_y_dinh)
-    df['Nhóm (Cluster)'] = df['Từ khóa / Cụm từ'].apply(gom_nhom)
-    
-    col_dl1, col_dl2 = st.columns(2)
-    with col_dl1: st.download_button("📥 Tải file CSV", data=df.to_csv(index=False).encode('utf-8-sig'), file_name=f'{st.session_state.current_file}.csv', mime='text/csv')
-    with col_dl2: st.download_button("📊 Tải file Excel", data=tao_file_excel(df), file_name=f'{st.session_state.current_file}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        
-    c1, c2, c3 = st.columns([1.5, 1, 1])
-    with c1:
-        st.dataframe(df.head(20), use_container_width=True)
-    with c2:
-        intent_counts = df['Ý định tìm kiếm (Intent)'].value_counts()
-        fig_pie, ax_pie = plt.subplots(figsize=(4, 4))
-        ax_pie.pie(intent_counts, labels=intent_counts.index, autopct='%1.1f%%', startangle=90, colors=['#ff9999','#66b3ff','#99ff99','#ffcc99'])
-        ax_pie.axis('equal') 
-        st.pyplot(fig_pie)
-    with c3:
-        words_dict = dict(st.session_state.current_kw)
-        wc = WordCloud(width=400, height=400, background_color='white', colormap='viridis').generate_from_frequencies(words_dict)
-        fig_wc, ax_wc = plt.subplots(figsize=(4, 4))
-        ax_wc.imshow(wc, interpolation='bilinear')
-        ax_wc.axis("off")
-        st.pyplot(fig_wc)
+    df = pd.DataFrame(st.session_state.current_kw, columns=['Từ khóa', 'Tần suất'])
+    st.dataframe(df.head(10), use_container_width=True)
 
-    st.markdown("---")
-    
-    # 🤖 KHU VỰC TRỢ LÝ AI (MENU ĐA NĂNG)
-    st.subheader("🤖 Xưởng Sản Xuất Nội Dung Bằng Trí Tuệ Nhân Tạo")
-    che_do_ai = st.selectbox("Chọn hành động bạn muốn AI thực hiện:", [
-        "📝 Lập Dàn Ý SEO (Outline)",
-        "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)",
-        "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)",
-        "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)",
-        "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)",
-        "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)",
-        "🧠 Phản Biện Kịch Bản (Script Doctor)",
-        "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)"
-    ])
-    
-    top_10_words = [item[0] for item in st.session_state.current_kw[:10]]
+    st.subheader("🤖 Xưởng Sản Xuất Nội Dung AI")
+    che_do_ai = st.selectbox("Chọn hành động:", ["📝 Lập Dàn Ý SEO (Outline)", "✍️ Viết Bài Full Chuẩn SEO (1000+ từ)", "🎬 Kịch Bản Video Ngắn (TikTok/Reels/Shorts)", "🕵️ Tái tạo Kịch Bản YouTube Đối Thủ (Phân tích Link)", "🛒 Tối Ưu Gian Hàng TMĐT (Tiêu đề & Mô tả)", "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)", "🧠 Phản Biện Kịch Bản (Script Doctor)", "📈 Dự Báo Thuật Toán YouTube (Pre-Publish)"])
     
     if st.button(f"✨ Kích Hoạt Trợ Lý AI"):
-        xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text, is_continue=False)
+        xu_ly_ai_da_nang(che_do_ai, [i[0] for i in st.session_state.current_kw[:10]], st.session_state.current_text, False)
         
     if st.session_state.ai_result:
         st.success("✅ Trợ lý AI đã hoàn thành nhiệm vụ!")
         st.markdown(st.session_state.ai_result)
         
-        if che_do_ai == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
-            st.info(f"💡 AI vừa hoàn thành **Part {st.session_state.sc_part - 1}**. Bạn có thể yêu cầu AI viết tiếp hoặc tải file về máy.")
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button(f"✍️ Viết tiếp Part {st.session_state.sc_part}"):
-                    xu_ly_ai_da_nang(che_do_ai, top_10_words, st.session_state.current_text, is_continue=True)
-            with col_btn2:
-                if st.session_state.sc_memory:
-                    st.download_button("📥 Tải File Kịch Bản (.TXT)", data=st.session_state.sc_memory, file_name="Kich_Ban_Silent_Capital.txt", mime="text/plain")
+        # --- KHU VỰC CHAT ĐÍNH KÈM TỆP ĐA NĂNG ---
+        st.markdown("---")
+        st.subheader("💬 Trợ Lý Tinh Chỉnh & Phân Tích Kèm Tệp")
+        st.caption("Chat với AI để gọt giũa kịch bản. Bạn có thể đính kèm Ảnh, file TXT, CSV, DOCX để AI đọc và phân tích theo yêu cầu.")
+        
+        # In lại lịch sử chat (Bỏ qua prompt gốc hệ thống tạo ra ban đầu)
+        for msg in st.session_state.chat_history[2:]:
+            with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+                for part in msg["parts"]:
+                    if "text" in part:
+                        st.markdown(part["text"])
+                    if "inline_data" in part:
+                        img_data = base64.b64decode(part["inline_data"]["data"])
+                        st.image(img_data, width=300)
+
+        # Trạm tải tệp đính kèm ngay trên khung chat
+        chat_file = st.file_uploader("📎 Đính kèm tệp vào tin nhắn (Ảnh, TXT, DOCX, CSV)", type=['png', 'jpg', 'jpeg', 'txt', 'docx', 'csv'], key="chat_upload")
+
+        # Khung chat chính
+        if prompt_chat := st.chat_input("VD: Đánh giá bức ảnh đính kèm và viết lại đoạn mở đầu kịch bản..."):
+            
+            user_parts = [{"text": prompt_chat}]
+            
+            # Xử lý nếu người dùng có up tệp
+            if chat_file:
+                fname = chat_file.name.lower()
+                # Nếu là ảnh -> Cho AI nhìn ảnh
+                if fname.endswith(('.png', '.jpg', '.jpeg')):
+                    img_b64 = base64.b64encode(chat_file.getvalue()).decode('utf-8')
+                    mime = "image/png" if fname.endswith('.png') else "image/jpeg"
+                    user_parts.append({"inline_data": {"mime_type": mime, "data": img_b64}})
+                # Nếu là file Text/Word/CSV -> Ép AI đọc toàn bộ chữ
+                elif fname.endswith('.txt'):
+                    text_content = chat_file.getvalue().decode('utf-8', errors='ignore')
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+                elif fname.endswith('.csv'):
+                    df_chat = pd.read_csv(chat_file)
+                    text_content = ' '.join(df_chat.astype(str).values.flatten())
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+                elif fname.endswith('.docx'):
+                    doc_chat = docx.Document(chat_file)
+                    text_content = ' '.join([p.text for p in doc_chat.paragraphs])
+                    user_parts[0]["text"] += f"\n\n[DỮ LIỆU ĐÍNH KÈM TỪ TỆP {fname}]:\n{text_content}"
+            
+            # In ra màn hình tin nhắn của người dùng
+            with st.chat_message("user"):
+                st.markdown(prompt_chat)
+                if chat_file:
+                    if chat_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(chat_file.getvalue(), width=300)
+                    else:
+                        st.info(f"📄 Đã đính kèm tệp: {chat_file.name}")
+            
+            # Lưu lại vào lịch sử trò chuyện
+            st.session_state.chat_history.append({"role": "user", "parts": user_parts})
+            
+            # Đóng gói và Gửi yêu cầu sang Google
+            model_path = ai_model_choice.strip().replace("models/", "")
+            url_chat = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
+            headers_chat = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
+            payload_chat = {"contents": st.session_state.chat_history}
+            
+            # Chờ AI trả lời
+            with st.chat_message("assistant"):
+                with st.spinner("🤖 Đang phân tích dữ liệu đính kèm và xử lý yêu cầu..."):
+                    try:
+                        # Nâng cấp Timeout lên 5 phút (300 giây)
+                        res_chat = requests.post(url_chat, headers=headers_chat, json=payload_chat, timeout=300)
+                        if res_chat.status_code == 200:
+                            reply = res_chat.json()['candidates'][0]['content']['parts'][0]['text']
+                            st.markdown(reply)
+                            st.session_state.chat_history.append({"role": "model", "parts": [{"text": reply}]})
+                        else:
+                            st.error(f"Lỗi API: {res_chat.text}")
+                    except Exception as e:
+                        st.error(f"Lỗi: {e}")
