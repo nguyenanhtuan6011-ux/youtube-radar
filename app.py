@@ -37,9 +37,29 @@ yt_api_key = st.sidebar.text_input("YouTube API v3 Key:", value=default_yt, type
 
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 Tùy chỉnh Model AI")
-# HIỂN THỊ RÕ RÀNG TÊN MODEL, CHỈ DÙNG TÊN GỐC KHÔNG CÓ HẬU TỐ
-ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash")
-st.sidebar.caption("Gợi ý an toàn: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash-exp")
+
+# TÍNH NĂNG MỚI: QUÉT DANH SÁCH MODEL TỪ GOOGLE
+if st.sidebar.button("🔍 Quét Model Khả Dụng"):
+    if not gemini_api_key:
+        st.sidebar.error("Vui lòng nhập API Key trước!")
+    else:
+        with st.sidebar.status("Đang quét máy chủ Google..."):
+            try:
+                url_check = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_api_key}"
+                res_check = requests.get(url_check, timeout=10)
+                if res_check.status_code == 200:
+                    models = [m['name'].replace('models/', '') for m in res_check.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
+                    st.sidebar.success("✅ Danh sách Model của bạn:")
+                    for m in models:
+                        st.sidebar.code(m)
+                else:
+                    st.sidebar.error(f"Lỗi: {res_check.status_code} - {res_check.text}")
+            except Exception as e:
+                st.sidebar.error(f"Lỗi kết nối: {e}")
+
+# Mặc định đổi sang bản có đánh số -001 để đảm bảo tỷ lệ sống 100%
+ai_model_choice = st.sidebar.text_input("Nhập chính xác tên Model:", value="gemini-1.5-flash-001")
+st.sidebar.caption("Gợi ý an toàn: gemini-1.5-flash-001, gemini-1.5-flash-002, gemini-1.5-pro-001")
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -59,7 +79,7 @@ if uploaded_stopwords:
     STOP_WORDS.update([w.strip().lower() for w in custom_words if w.strip()])
 
 ngram_choice = st.sidebar.radio("Độ dài từ khóa:", ("Từ đơn", "Cụm 2 từ", "Cụm 3 từ"))
-ngram_map = {"Từ đơn": 1, "Cụm 2 từ": 2, "Cụm 3 int": 3}
+ngram_map = {"Từ đơn": 1, "Cụm 2 từ": 2, "Cụm 3 từ": 3}
 selected_ngram = ngram_map[ngram_choice]
 
 # --- CÁC HÀM XỬ LÝ CỐT LÕI ---
@@ -131,7 +151,6 @@ def ai_cham_diem_thumbnail(img_url, title):
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        # BỘ LỌC KÉP: Loại bỏ chữ "models/" nếu lỡ tay dán vào
         model_path = ai_model_choice.strip().replace("models/", "")
         url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
@@ -165,7 +184,6 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         st.error("❌ Vui lòng dán Gemini API Key ở thanh bên trái!")
         return
 
-    # BỘ LỌC KÉP: Tránh lỗi double prefix
     model_path = ai_model_choice.strip().replace("models/", "")
     url_gen = f"https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
@@ -237,7 +255,7 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
                         st.session_state.ai_result = new_content
                     st.rerun()
                 except KeyError:
-                    st.error(f"❌ Nội dung nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết: {resp_gen.text}")
+                    st.error(f"❌ Nội dung nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
             else:
                 st.error(f"❌ Lỗi từ Google API (Mã {resp_gen.status_code}). Nguyên nhân: {resp_gen.text}")
         except Exception as e:
