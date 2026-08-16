@@ -117,7 +117,7 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
     st.session_state.sc_part = 1
     st.session_state.yt_xray_data = None
 
-# --- HÀM LẤY API MODEL GEMINI ---
+# --- HÀM LẤY API MODEL GEMINI (ĐÃ ĐƯỢC TỐI ƯU HÓA) ---
 def get_gemini_model():
     if not gemini_api_key: return None
     url_list = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -126,6 +126,17 @@ def get_gemini_model():
         res = requests.get(url_list, headers=headers, timeout=5)
         if res.status_code == 200:
             models = [m['name'] for m in res.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', []) and 'gemini' in m['name']]
+            
+            # Ưu tiên lấy bản 1.5-flash siêu ổn định
+            for m in models:
+                if "1.5-flash" in m and "8b" not in m:
+                    return m
+                    
+            # Nếu không tìm thấy, lấy các bản khác nhưng BẮT BUỘC bỏ qua bản 2.5-flash đang lỗi
+            for m in models:
+                if "2.5-flash" not in m:
+                    return m
+                    
             return models[0] if models else None
     except:
         return None
@@ -244,10 +255,8 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
                         st.session_state.ai_result = new_content
                     st.rerun()
                 except KeyError:
-                    # Bắt lỗi Safety Filter
                     st.error(f"❌ Nội dung đầu vào chứa từ ngữ nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
             else:
-                # Bắt lỗi HTTP (429, 403, 500)
                 st.error(f"❌ API Google báo lỗi (Mã {resp_gen.status_code}): {resp_gen.text}")
         except Exception as e:
             st.error(f"Lỗi kết nối mạng hoặc quá hạn chờ: {e}")
