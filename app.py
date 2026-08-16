@@ -36,8 +36,30 @@ st.sidebar.header("🔑 Cấu Hình API")
 gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI phân tích):", value=default_gemini, type="password")
 yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để X-Ray Đối thủ):", value=default_yt, type="password")
 
-# TÍNH NĂNG MỚI: CHỌN CỨNG MODEL TRÁNH LỖI 404
-ai_model_choice = st.sidebar.selectbox("🤖 Chọn Model AI (Khuyên dùng 1.5):", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"])
+# --- HÀM TỰ ĐỘNG QUÉT MODEL AI ĐANG SỐNG ---
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_gemini_models(api_key):
+    if not api_key:
+        return ["Vui lòng nhập Gemini API Key để tải danh sách"]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            models = [m['name'].replace('models/', '') for m in data.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
+            return models if models else ["Không tìm thấy model nào hỗ trợ"]
+        else:
+            return [f"Lỗi truy cập danh sách: {res.status_code}"]
+    except:
+        return ["Lỗi kết nối tải danh sách"]
+
+available_models = fetch_gemini_models(gemini_api_key)
+
+st.sidebar.markdown("---")
+st.sidebar.header("🤖 Tùy chỉnh Model AI (Chống lỗi 404)")
+ai_model_choice = st.sidebar.selectbox("Danh sách Model đang hoạt động:", available_models)
+custom_model = st.sidebar.text_input("Hoặc nhập tên Model thủ công (VD: gemini-pro):")
+final_model = custom_model.strip() if custom_model.strip() else ai_model_choice
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
@@ -123,14 +145,14 @@ def luu_ket_qua_vao_bo_nho(res_kw, full_text, ten_file):
 # --- HÀM AI CHẤM ĐIỂM THUMBNAIL TỪ ẢNH ---
 def ai_cham_diem_thumbnail(img_url, title):
     if not gemini_api_key: return "⚠️ Thiếu Gemini API Key để chấm điểm ảnh."
+    if "Lỗi" in final_model or "Vui lòng" in final_model: return "⚠️ Vui lòng chọn Model AI hợp lệ."
     
     try:
         img_resp = requests.get(img_url, timeout=10)
         if img_resp.status_code != 200: return "⚠️ Không thể tải ảnh Thumbnail để phân tích."
         img_b64 = base64.b64encode(img_resp.content).decode('utf-8')
         
-        # Gắn cứng model do người dùng chọn ở thanh bên
-        model_path = f"models/{ai_model_choice}"
+        model_path = f"models/{final_model}"
         url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
         headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
         prompt = f"""Bạn là một chuyên gia Marketing và Thiết kế YouTube. 
@@ -153,18 +175,21 @@ def ai_cham_diem_thumbnail(img_url, title):
         if res.status_code == 200:
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return "⚠️ AI đang bận, không thể xử lý ảnh lúc này."
+            return f"⚠️ Lỗi từ Google ({res.status_code}): Không thể xử lý ảnh bằng model {final_model}."
     except Exception as e:
-        return f"⚠️ Lỗi xử lý ảnh: {e}"
+        return f"⚠️ Lỗi mạng khi xử lý ảnh: {e}"
 
 # --- HÀM TẠO NỘI DUNG AI ĐA NĂNG ---
 def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
     if not gemini_api_key:
-        st.error("❌ Vui lòng kiểm tra lại Gemini API Key!")
+        st.error("❌ Vui lòng dán Gemini API Key ở thanh bên trái!")
         return
         
-    # Gắn cứng model do người dùng chọn ở thanh bên
-    model_path = f"models/{ai_model_choice}"
+    if "Lỗi" in final_model or "Vui lòng" in final_model or "Không tìm thấy" in final_model:
+        st.error("❌ Model AI hiện tại không hợp lệ. Hãy đảm bảo API Key đúng và chọn một Model từ danh sách bên trái.")
+        return
+
+    model_path = f"models/{final_model}"
     url_gen = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:generateContent"
     headers = {'x-goog-api-key': gemini_api_key, 'Content-Type': 'application/json'}
 
@@ -197,10 +222,10 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
         
         Hãy đóng vai hệ thống AI của YouTube để "chấm điểm" và dự báo mức độ thành công của video này TRƯỚC KHI TẢI LÊN. Trình bày báo cáo rõ ràng theo 4 phần:
         
-        1. 🎯 **Chỉ Số Đề Xuất (Algorithm Score):** Chấm điểm /100 dựa trên khả năng Viral và chuẩn SEO (Giải thích ngắn gọn lý do).
-        2. 🧲 **Dự Báo Tỷ Lệ Nhấp (CTR):** Nội dung và chủ đề này có đủ sức nặng kích thích sự tò mò không? Tiêu đề dự kiến có đang bị nhạt nhẽo không?
-        3. ⏳ **Tỷ Lệ Giữ Chân (Retention Rate):** Cấu trúc nội dung có hứa hẹn giữ chân người xem qua 30 giây đầu (Hook) tốt không? Có điểm nào dễ làm khán giả chán và thoát ra không?
-        4. 🚀 **3 Bước Tối Ưu Khẩn Cấp:** Đưa ra 3 hành động cụ thể BẮT BUỘC phải sửa (Đổi tiêu đề thành gì? Đổi góc nhìn ra sao? Thêm bớt đoạn nào?) để video dễ dàng cắn luồng Traffic đề xuất tốt nhất."""
+        1. 🎯 **Chỉ Số Đề Xuất (Algorithm Score):** Chấm điểm /100 dựa trên khả năng Viral và chuẩn SEO.
+        2. 🧲 **Dự Báo Tỷ Lệ Nhấp (CTR):** Nội dung và chủ đề này có đủ sức nặng kích thích sự tò mò không?
+        3. ⏳ **Tỷ Lệ Giữ Chân (Retention Rate):** Cấu trúc nội dung có hứa hẹn giữ chân người xem qua 30 giây đầu (Hook) tốt không?
+        4. 🚀 **3 Bước Tối Ưu Khẩn Cấp:** Đưa ra 3 hành động cụ thể BẮT BUỘC phải sửa để video dễ dàng cắn luồng Traffic đề xuất tốt nhất."""
     elif che_do == "🎬 Kịch Bản Phim Tài Liệu (Chuẩn Silent Capital)":
         prompt = f"""Bạn là một Biên kịch Phim tài liệu chuyên nghiệp. Đang viết kịch bản chuẩn "SILENT CAPITAL".
         Từ khóa: {tu_khoa_list}
@@ -221,7 +246,7 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    with st.spinner(f"🤖 Trợ lý AI đang xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
+    with st.spinner(f"🤖 Đang gọi Model '{final_model}' để xử lý {'tiếp Part ' + str(st.session_state.sc_part) if is_continue else 'yêu cầu: ' + che_do} ..."):
         try:
             resp_gen = requests.post(url_gen, headers=headers, json=payload, timeout=90) 
             if resp_gen.status_code == 200:
@@ -235,9 +260,9 @@ def xu_ly_ai_da_nang(che_do, tu_khoa_list, text_goc, is_continue=False):
                         st.session_state.ai_result = new_content
                     st.rerun()
                 except KeyError:
-                    st.error(f"❌ Nội dung đầu vào chứa từ ngữ nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
+                    st.error(f"❌ Nội dung đầu vào nhạy cảm bị Bộ lọc an toàn (Safety Filter) của Google chặn lại. Chi tiết lỗi: {resp_gen.text}")
             else:
-                st.error(f"❌ API Google báo lỗi (Mã {resp_gen.status_code}): {resp_gen.text}")
+                st.error(f"❌ Lỗi từ Google API (Mã {resp_gen.status_code}). Nguyên nhân: {resp_gen.text}")
         except Exception as e:
             st.error(f"Lỗi kết nối mạng hoặc quá hạn chờ: {e}")
 
