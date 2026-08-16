@@ -37,9 +37,14 @@ gemini_api_key = st.sidebar.text_input("Gemini API Key (Dùng để AI phân tí
 yt_api_key = st.sidebar.text_input("YouTube Data API v3 Key (Để X-Ray Đối thủ):", value=default_yt, type="password")
 
 st.sidebar.markdown("---")
-st.sidebar.header("🤖 Tùy chỉnh Model AI (Đã Fix lỗi 404)")
-# Ép cứng danh sách các bản 1.5 ổn định nhất, tuyệt đối loại bỏ bản 2.5 lỗi
-ai_model_choice = st.sidebar.selectbox("Danh sách Model đang hoạt động:", ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b"])
+st.sidebar.header("🤖 Tùy chỉnh Model AI")
+
+# TÍNH NĂNG ÉP XÓA CACHE: Đổi key để Streamlit quên đi bản 2.5 cũ, dùng bản -latest chuẩn nhất
+ai_model_choice = st.sidebar.selectbox(
+    "Danh sách Model đang hoạt động:", 
+    ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest"],
+    key="force_reset_model_key_v3"
+)
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Cấu Hình Phân Tích")
